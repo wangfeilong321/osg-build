@@ -320,30 +320,30 @@ class TestKoji(XTestCase):
         output = backtick_osg_build(self.kdr_shell + ["--scratch", self.pkg_dir])
         out_list = output.split("\n")
         self.assertTrue(
-            regex_in_list(r"(osg-)?koji build el5-osg.*", out_list),
+            regex_in_list(r"(osg-)?koji .*build el5-osg.*", out_list),
             "not building for el5")
         self.assertTrue(
-            regex_in_list(r"(osg-)?koji build el6-osg.*", out_list),
+            regex_in_list(r"(osg-)?koji .*build el6-osg.*", out_list),
             "not building for el6")
 
     def test_koji_shell_args2(self):
         output = backtick_osg_build(self.kdr_shell + ["--el5", "--scratch", self.pkg_dir])
         out_list = output.split("\n")
         self.assertTrue(
-            regex_in_list(r"(osg-)?koji build el5-osg.*", out_list),
+            regex_in_list(r"(osg-)?koji .*build el5-osg.*", out_list),
             "not building for el5")
         self.assertFalse(
-            regex_in_list(r"(osg-)?koji build el6-osg.*", out_list),
+            regex_in_list(r"(osg-)?koji .*build el6-osg.*", out_list),
             "falsely building for el6")
 
     def test_koji_shell_args3(self):
         output = backtick_osg_build(self.kdr_shell + ["--ktt", "el6-osg", "--scratch", self.pkg_dir])
         out_list = output.split("\n")
         self.assertFalse(
-            regex_in_list(r"(osg-)?koji build el5-osg.*", out_list),
+            regex_in_list(r"(osg-)?koji .*build el5-osg.*", out_list),
             "falsely building for el5")
         self.assertTrue(
-            regex_in_list(r"(osg-)?koji build el6-osg.*", out_list),
+            regex_in_list(r"(osg-)?koji .*build el6-osg.*", out_list),
             "not building for el6 for the right target")
 
     def test_koji_shell_args4(self):
@@ -376,10 +376,10 @@ class TestKoji(XTestCase):
         output = backtick_osg_build(self.kdr_shell + ["--el5", "--upcoming", "--scratch", self.pkg_dir])
         out_list = output.split("\n")
         self.assertTrue(
-            regex_in_list(r"(osg-)?koji build el5-osg-upcoming.*", out_list),
+            regex_in_list(r"(osg-)?koji .*build el5-osg-upcoming.*", out_list),
             "not building for el5-upcoming")
         self.assertFalse(
-            regex_in_list(r"(osg-)?koji build el6-osg-upcoming.*", out_list),
+            regex_in_list(r"(osg-)?koji .*build el6-osg-upcoming.*", out_list),
             "falsely building for el6-upcoming")
 
     def test_verify_correct_branch(self):
