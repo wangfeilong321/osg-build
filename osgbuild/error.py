@@ -24,6 +24,11 @@ class SVNError(Error):
         Error.__init__(self, "SVN error: %s" % msg)
 
 
+class GitError(Error):
+    def __init__(self, msg):
+        Error.__init__(self, "git error: %s" % msg)
+
+
 class GlobNotFoundError(Error):
     def __init__(self, globtext):
         msg = "Couldn't find file matching '%s'." % globtext

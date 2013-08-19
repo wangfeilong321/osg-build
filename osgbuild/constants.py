@@ -33,6 +33,12 @@ SVN_TRUNK_PATH = "native/redhat/trunk"
 SVN_UPCOMING_PATH = "native/redhat/upcoming"
 CSL_KOJI_DIR = "/p/vdt/workspace/koji-1.6.0"
 
+OSG_REMOTE = 'https://github.com/opensciencegrid/Software-Redhat.git'
+KNOWN_GIT_REMOTES = ['https://github.com/unlhcc/hcc-packaging.git',
+                     'git@github.com:unlhcc/hcc-packaging.git',
+                     OSG_REMOTE]
+# Map the authenticated URL to an anonymous checkout URL.
+GIT_REMOTE_MAPS = {'git@github.com:unlhcc/hcc-packaging.git': 'https://github.com/unlhcc/hcc-packaging.git'}
 
 DEFAULT_BUILDOPTS_COMMON = {
     'autoclean': True,
@@ -50,7 +56,7 @@ DEFAULT_BUILDOPTS_COMMON = {
     'redhat_releases': None,
     'regen_repos': False,
     'scratch': False,
-    'svn': None,
+    'vcs': None,
     'target_arch': None,
     'working_directory': '.',
 }

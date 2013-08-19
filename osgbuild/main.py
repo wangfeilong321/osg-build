@@ -26,6 +26,7 @@ from osgbuild import kojiinter
 from osgbuild import mock
 from osgbuild import srpm
 from osgbuild import svn
+from osgbuild import git
 from osgbuild import utils
 
 __version__ = '@VERSION@'
@@ -50,17 +51,22 @@ def main(argv):
     koji_obj = None
     mock_obj = None
 
+    vcs = None
     if task == 'allbuild':
         log.warning("The 'allbuild' task is deprecated. The 'koji' task now "
                     "builds on all supported distro versions by default.")
     # checks
-    if task == 'allbuild' or (task == 'koji' and buildopts['svn']):
-        # verify svn working dirs
+    if task == 'allbuild' or (task == 'koji' and buildopts['vcs']):
+        # verify working dirs
         for pkg in package_dirs:
-            if not svn.verify_working_dir(pkg):
+            if git.is_git(pkg):
+                vcs = git
+            else:
+                vcs = svn
+            if not vcs.verify_working_dir(pkg):
                 print "Exiting"
                 return 1
-            svn.verify_correct_branch(pkg, buildopts)
+            vcs.verify_correct_branch(pkg, buildopts)
     else:
         # verify package dirs
         for pkg in package_dirs:
@@ -72,7 +78,7 @@ def main(argv):
                     " isn't a package directory "
                     "(must have either osg/ or upstream/ dirs or both)")
 
-    if (task == 'koji' and not buildopts['scratch'] and not buildopts['svn']):
+    if (task == 'koji' and not buildopts['scratch'] and not buildopts['vcs']):
         raise UsageError("Non-scratch Koji builds must be from SVN!")
 
     # main loop 
@@ -89,7 +95,7 @@ def main(argv):
                 for key in ALLBUILD_ALLOWED_OPTNAMES:
                     dver_buildopts[key] = buildopts[key]
 
-                svn.koji(pkg, kojiinter.KojiInter(dver_buildopts), dver_buildopts)
+                vcs.koji(pkg, kojiinter.KojiInter(dver_buildopts), dver_buildopts)
 
         else:
             for dver in buildopts['enabled_dvers']:
@@ -108,8 +114,8 @@ def main(argv):
                         koji_obj = kojiinter.KojiInter(dver_buildopts_)
                     mock_obj = mock.Mock(dver_buildopts, koji_obj)
                 
-                if buildopts['svn'] and task == 'koji':
-                    task_ids.append(svn.koji(pkg, koji_obj, dver_buildopts))
+                if buildopts['vcs'] and task == 'koji':
+                    task_ids.append(vcs.koji(pkg, koji_obj, dver_buildopts))
                 else:
                     builder = srpm.SRPMBuild(pkg,
                                              dver_buildopts,
@@ -136,7 +142,7 @@ def main(argv):
             # TODO This is not implemented for the KojiShellInter backend
             # Not implemented for SVN builds since results_dir is undefined for those
             if buildopts['getfiles']:
-                if buildopts['svn']:
+                if buildopts['vcs']:
                     log.warning("--getfiles is only for SRPM builds")
                 elif not isinstance(kojiinter.KojiInter.backend, kojiinter.KojiLibInter):
                     log.warning("--getfiles is only implemented on the KojiLib backend")
@@ -371,11 +377,11 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         "--no-scratch", "--noscratch", action="store_false", dest="scratch",
         help="Do not perform a scratch build")
     koji_group.add_option(
-        "--svn", action="store_true",
-        help="Build package directly from SVN "
+        "--vcs", action="store_true", dest="vcs",
+        help="Build package directly from SVN/git "
         "(default for non-scratch builds)")
     koji_group.add_option(
-        "--no-svn", "--nosvn", action="store_false", dest="svn",
+        "--no-vcs", "--novcs", action="store_false", dest="vcs",
         help="Do not build package directly from SVN "
         "(default for scratch builds)")
     koji_group.add_option(
@@ -383,7 +389,11 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         callback=parser_targetopts_callback,
         type=None,
         help="Target build for the 'upcoming' osg repos.")
-
+    koji_group.add_option(
+        "--repo", action="callback",
+        callback=parser_targetopts_callback,
+        type="string", dest="repo",
+        help="Specify a set of repos to build to (osg, upcoming, hcc, uscms).")
     for grp in [prebuild_group, rpmbuild_mock_group, mock_group, koji_group]:
         parser.add_option_group(grp)
 
@@ -419,7 +429,7 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
     --koji-tag=el5-foobar will implicitly turn on el5 builds.
 
     Also handle --ktt (--koji-tag-and-target), which sets both koji_tag
-    and koji_target, and --upcoming, which sets the target for both dvers.
+    and koji_target, and --upcoming, and --repo, which sets the target for both dvers.
 
     """
     # for options that have aliases, option.dest gives us the
@@ -459,6 +469,14 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
     elif opt_str == '--upcoming': # Also HACK
         for dver in DVERS:
             targetopts_by_dver[dver]['koji_target'] = 'el%s-osg-upcoming' % dver
+    elif opt_str == '--repo':
+        target_hint = ''
+        if value == 'upcoming': target_hint = 'el%s-osg-upcoming'
+        elif value == 'osg': target_hint = 'el%s-osg'
+        elif value == 'hcc': target_hint = 'hcc-el%s'
+        elif value == 'uscms': target_hint = 'uscms-el%s'
+        for dver in DVERS:
+            targetopts_by_dver[dver]['koji_target'] = target_hint % dver
     else:
         dver = get_dver_from_string(value)
 
@@ -586,11 +604,11 @@ def get_buildopts(options, task):
     if buildopts['mock_config_from_koji']:
         buildopts['mock_config'] = None
 
-    if buildopts['svn'] is None and task == 'koji':
+    if buildopts['vcs'] is None and task == 'koji':
         if buildopts['scratch']:
-            buildopts['svn'] = False
+            buildopts['vcs'] = False
         else:
-            buildopts['svn'] = True
+            buildopts['vcs'] = True
 
     return buildopts
 # end of get_buildopts()

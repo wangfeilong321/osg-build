@@ -178,6 +178,15 @@ gives you a subject with a CN""" % KOJI_CLIENT_CERT)
                                        regen_repos=self.regen_repos,
                                        no_wait=self.no_wait)
 
+    def build_git(self, remote, rev, path):
+        """Submit an SVN build"""
+        print remote
+        return KojiInter.backend.build("git+" + remote + "?" + path + "#" + rev,
+                                       self.target,
+                                       self.scratch,
+                                       regen_repos=self.regen_repos,
+                                       no_wait=self.no_wait)
+
     def mock_config(self, arch, tag, dist, outpath, name):
         """Request a mock config from koji-hub"""
         return KojiInter.backend.mock_config(arch, tag, dist, outpath, name)
