@@ -10,6 +10,11 @@ import osgbuild.constants as constants
 
 def is_git(package_dir):
     """Determine whether a given directory is part of a git repo."""
+    # If package_dir is a URL, not a directory, then we can't cd into it to
+    # check. Assume False for now.
+    if re.match(r'[-a-z+]+://', package_dir):
+        return False
+    # TODO: Allow specifying a git URL to build from.
     pwd = os.getcwd()
     try:
         os.chdir(package_dir)
