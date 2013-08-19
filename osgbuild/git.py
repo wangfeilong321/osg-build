@@ -1,6 +1,7 @@
 """Helper functions for a git build."""
 import re
 import os
+import errno
 
 from osgbuild.error import Error, GitError
 from osgbuild import utils
@@ -13,7 +14,12 @@ def is_git(package_dir):
     try:
         os.chdir(package_dir)
         command = ["git", "status", "--porcelain"]
-        err = utils.sbacktick(command, clocale=True, err2out=True)[1]
+        try:
+            err = utils.sbacktick(command, clocale=True, err2out=True)[1]
+        except OSError, oe:
+            if oe.errno != errno.ENOENT:
+                raise
+            err = 1
         if err:
             return False
     finally:
