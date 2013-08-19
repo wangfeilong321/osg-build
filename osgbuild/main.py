@@ -381,7 +381,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         help="Build package directly from SVN/git "
         "(default for non-scratch builds)")
     koji_group.add_option(
-        "--no-vcs", "--novcs", "--no-svn", "--nosvn" action="store_false", dest="vcs",
+        "--no-vcs", "--novcs", "--no-svn", "--nosvn", action="store_false", dest="vcs",
         help="Do not build package directly from SVN/git "
         "(default for scratch builds)")
     koji_group.add_option(
@@ -561,9 +561,10 @@ def get_buildopts(options, task):
     buildopts = DEFAULT_BUILDOPTS_COMMON.copy()
 
     cfg_items = read_config_file(options.config_file)
-    # Backward compatibility for 'svn' option:
-    cfg_items['vcs'] = cfg_items['vcs'] or cfg_items['svn']
     buildopts.update(cfg_items)
+
+    # Backward compatibility for 'svn' option:
+    buildopts['vcs'] = buildopts.get('vcs') or buildopts.get('svn')
 
     # Overrides from command line
     for optname in options.__dict__.keys():
