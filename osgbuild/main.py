@@ -113,7 +113,7 @@ def main(argv):
                         dver_buildopts_['dry_run'] = True
                         koji_obj = kojiinter.KojiInter(dver_buildopts_)
                     mock_obj = mock.Mock(dver_buildopts, koji_obj)
-                
+
                 if buildopts['vcs'] and task == 'koji':
                     task_ids.append(vcs.koji(pkg, koji_obj, dver_buildopts))
                 else:
@@ -377,12 +377,12 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         "--no-scratch", "--noscratch", action="store_false", dest="scratch",
         help="Do not perform a scratch build")
     koji_group.add_option(
-        "--vcs", action="store_true", dest="vcs",
+        "--vcs", "--svn", action="store_true", dest="vcs",
         help="Build package directly from SVN/git "
         "(default for non-scratch builds)")
     koji_group.add_option(
-        "--no-vcs", "--novcs", action="store_false", dest="vcs",
-        help="Do not build package directly from SVN "
+        "--no-vcs", "--novcs", "--no-svn", "--nosvn" action="store_false", dest="vcs",
+        help="Do not build package directly from SVN/git "
         "(default for scratch builds)")
     koji_group.add_option(
         "--upcoming", action="callback",
@@ -555,6 +555,8 @@ def get_buildopts(options, task):
     buildopts = DEFAULT_BUILDOPTS_COMMON.copy()
 
     cfg_items = read_config_file(options.config_file)
+    # Backward compatibility for 'svn' option:
+    cfg_items['vcs'] = cfg_items['vcs'] or cfg_items['svn']
     buildopts.update(cfg_items)
 
     # Overrides from command line
