@@ -1,3 +1,6 @@
+* Mon Aug 26 2013 Matyas Selmeci <matyas@cs.wisc.edu> - 1.2.8
+- fix syntax error in osg-promote
+
 * Mon Aug 19 2013 Matyas Selmeci <matyas@cs.wisc.edu> - 1.2.7
 - added git support (contrib. by Brian Bockelman)
 
