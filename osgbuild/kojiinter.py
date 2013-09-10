@@ -86,10 +86,11 @@ def get_cn():
     """
     subject = utils.checked_backtick("openssl x509 -in '%s' -noout -subject"
                                      " -nameopt multiline" % KOJI_CLIENT_CERT)
-    # Get the last commonName
+    # Get the first commonName using the negative lookbehind assertion to make
+    # sure we're capturing the right commonName if there are multiple.
     cn_match = re.search(r"""(?xms)
-        ^ \s* commonName \s* = \s* ([^\n]+) \s* $
-        (?!.*commonName)""", subject)
+        (?!<commonName)
+        ^ \s* commonName \s* = \s* ([^\n]+) \s* $""", subject)
 
     if cn_match:
         return cn_match.group(1)
