@@ -460,6 +460,16 @@ class KojiHelper(kojiinter.KojiLibInter):
         self.read_config_file()
         self.init_koji_session(login=do_login)
 
+    def get_all_dvers(self):
+        """Return all possible dvers supported by any tag (as a list)"""
+        pat = re.compile("(?:\b|^)(el\d+)")
+        dvers = set()
+        for tag in self.get_tags():
+            match = pat.search(tag)
+            if match:
+                dvers.add(match.group(1))
+        return sorted(list(dvers))
+
     def get_build_in_tag(self, tag, pkg_or_build):
         """Return the build matching 'pkg_or_build' in 'tag'.
         If pkg_or_build is not in the tag, returns None. Otherwise:
@@ -597,22 +607,16 @@ def write_prereleasenotes(kojihelper, out, builds, no_date):
 # Command line and main
 #
 
-def parse_cmdline_args(valid_routes, argv):
+def parse_cmdline_args(all_dvers, valid_routes, argv):
     """Return a tuple of (options, positional args)"""
-    # TODO: el5 and el6 arguments are currently hardcoded -- this means that
-    # el7 support will require code changes despite the autodetection code in
-    # RouteDiscovery.
     helpstring = "%prog -r|--route ROUTE [options] <packages or builds>"
     helpstring += "\n\nValid routes are:\n - " + "\n - ".join(sorted(valid_routes.keys()))
     parser = OptionParser(helpstring)
+
     parser.add_option("-r", "--route", default="testing", type='choice', choices=valid_routes.keys(),
                       help="The promotion route to use.")
     parser.add_option("-n", "--dry-run", action="store_true", default=False,
                       help="Do not promote, just show what would be done")
-    parser.add_option("--el5-only", action="store_false", dest='el6', default=True,
-                      help="Promote only el5 packages.")
-    parser.add_option("--el6-only", action="store_false", dest='el5', default=True,
-                      help="Promote only el6 packages.")
     parser.add_option("--ignore-rejects", dest="ignore_rejects", action="store_true", default=False,
                       help="Ignore rejections due to version mismatch between dvers or missing package for one dver")
     of_choices = ['old', 'prerelnote', 'relnote', 'none']
@@ -624,16 +628,17 @@ def parse_cmdline_args(valid_routes, argv):
                       help="Regenerate repo(s) afterward")
     parser.add_option("-y", "--assume-yes", action="store_true", default=False,
                       help="Do not prompt before promotion")
+    for dver in all_dvers:
+        parser.add_option("--%s-only" % dver, action="store_true", default=False,
+                          help="Promote only %s builds" % dver)
+        parser.add_option("--no-%s" % dver, "--no%s" % dver, action="store_true", default=False,
+                          help="Do not promote %s builds" % dver)
 
     options, args = parser.parse_args(argv[1:])
 
-    if not options.el5 and not options.el6:
-        parser.error("Can't specify both --el5-only and --el6-only")
-
-    # optparse doesn't do 'append_const' in python 2.4 so simulate it
-    options.dvers = []
-    if options.el5: options.dvers.append('el5')
-    if options.el6: options.dvers.append('el6')
+    options.dvers = _get_wanted_dvers(all_dvers, parser, options)
+    if not options.dvers:
+        parser.error("No dvers found to promote")
 
     if options.route:
         # User is allowed to specify the shortest unambiguous prefix of a route
@@ -649,6 +654,35 @@ def parse_cmdline_args(valid_routes, argv):
 
     return (options, args)
 
+def _get_wanted_dvers(all_dvers, parser, options):
+    """Helper for parse_cmdline_args. Looks at the --dver-only (e.g. --el5-only)
+    and --no-dver (e.g. --no-el5) arguments the user may have specified and
+    returns a list of the dvers we actually want to promote for.
+
+    """
+    wanted_dvers = list(all_dvers)
+    # the dvers for which the user specified --dver-only (e.g. --el5-only).
+    # There should be at most 1, but need to check and give appropriate error.
+    only_dvers = []
+    for dver in all_dvers:
+        if getattr(options, "%s_only" % dver):
+            only_dvers.append(dver)
+    if len(only_dvers) > 1:
+        bad_opt_names = ['--%s-only' % dver for dver in only_dvers]
+        parser.error("Can't specify " + " and ".join(bad_opt_names))
+    elif len(only_dvers) == 1:
+        wanted_dvers = list(only_dvers)
+
+    # Now go through any --no-dvers (e.g. --no-el5) the user specified.
+    for dver in all_dvers:
+        if getattr(options, "no_%s" % dver):
+            if dver in only_dvers:
+                parser.error("Can't specify both --no-%s and --%s-only" % (dver, dver))
+            else:
+                wanted_dvers.remove(dver)
+
+    return wanted_dvers
+
 def main(argv=None):
     if argv is None:
         argv = sys.argv
@@ -658,7 +692,7 @@ def main(argv=None):
     route_discovery = RouteDiscovery(kojihelper.get_tags())
     valid_routes = route_discovery.get_routes()
 
-    options, pkgs_or_builds = parse_cmdline_args(valid_routes, argv)
+    options, pkgs_or_builds = parse_cmdline_args(kojihelper.get_all_dvers(), valid_routes, argv)
 
     dvers = options.dvers
     route = options.route
