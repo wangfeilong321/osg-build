@@ -28,12 +28,10 @@ from optparse import OptionParser
 kojihelper = None
 options = None
 dvers = []
-VALID_ROUTES = None
 
 class YourTagsAreMessedUp(Exception):
     pass
 
-VALID_DVERS = ["el5", "el6"]
 STATIC_VALID_ROUTES = {
     "hcc": ["hcc-%s-testing", "hcc-%s-release"],
     "old-upcoming": ["%s-osg-upcoming-development", "%s-osg-upcoming-testing"],
@@ -52,13 +50,13 @@ def any(iterable): # Don't warn about redefining this. pylint: disable=W0622
             return True
     return False
 
-def parse_cmdline_args(argv):
+def parse_cmdline_args(valid_routes, argv):
     """Return a tuple of (options, positional args)"""
     parser = OptionParser("""
     %prog -r|--route ROUTE [options] <packages or builds>
 """)
-    parser.add_option("-r", "--route", default="testing", type='choice', choices=VALID_ROUTES.keys(),
-                      help="The promotion route to use. Valid routes are: " + ", ".join(VALID_ROUTES.keys()))
+    parser.add_option("-r", "--route", default="testing", type='choice', choices=valid_routes.keys(),
+                      help="The promotion route to use. Valid routes are: " + ", ".join(valid_routes.keys()))
     parser.add_option("-n", "--dry-run", action="store_true", default=False,
                       help="Do not promote, just show what would be done")
     parser.add_option("--el5-only", action="store_false", dest='el6', default=True,
@@ -92,11 +90,11 @@ def parse_cmdline_args(argv):
 
     if options.route:
         # User is allowed to specify the shortest unambiguous prefix of a route
-        matching_routes = [x for x in VALID_ROUTES.keys() if x.startswith(options.route)]
+        matching_routes = [x for x in valid_routes.keys() if x.startswith(options.route)]
         if len(matching_routes) > 1:
             parser.error("Ambiguous route. Matching routes are: " + ", ".join(matching_routes))
         elif not matching_routes:
-            parser.error("Invalid route. Valid routes are: " + ", ".join(VALID_ROUTES.keys()))
+            parser.error("Invalid route. Valid routes are: " + ", ".join(valid_routes.keys()))
         else:
             options.route = matching_routes[0]
     else:
@@ -122,18 +120,21 @@ class RouteDiscovery(object):
 
     def __init__(self, tags):
         self.tags = tags
+        self.routes = {}
 
-        self.valid_routes = {}
-        self.valid_routes.update(STATIC_VALID_ROUTES)
-        self.valid_routes.update(self.get_valid_osg_routes())
+    def get_routes(self):
+        if not self.routes:
+            self.routes.update(STATIC_VALID_ROUTES)
+            self.routes.update(self.get_valid_osg_routes())
 
-        self.dvers_for_routes = {}
-        for route_name in self.valid_routes:
-            dvers = self.get_valid_dvers_for_route(route_name)
-            if not dvers:
-                raise YourTagsAreMessedUp("Route %s has no valid dvers" % route_name)
-            else:
-                self.dvers_for_routes[route_name] = dvers
+            self.dvers_for_routes = {}
+            for route_name, route in self.routes.iteritems():
+                dvers = self.get_dvers_for_route(route)
+                if not dvers:
+                    raise YourTagsAreMessedUp("Route %s has no valid dvers" % route_name)
+                else:
+                    self.dvers_for_routes[route_name] = dvers
+        return self.routes
 
     def get_highest_osgver(self):
         def cmp_version(a, b):
@@ -162,12 +163,8 @@ class RouteDiscovery(object):
                 testing_tags_osgvers_dvers.append((tag,) + match.group(1, 2))
         return testing_tags_osgvers_dvers
 
-    def get_valid_dvers_for_route(self, route):
-        """Return the available dvers for the given route ('route' is an index
-        into valid_routes). Assume the route has been validated, i.e. for each
-        from_tag the corresponding to_tag exists.
-
-        """                                        # ^ TODO could be better
+    def get_dvers_for_route(self, route):
+        """ TODO """
         tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[0]))
         available_tags = [x for x in self.tags if tag_pattern.match(x)]
         dver_pattern = re.compile(r'(el\d+)')
@@ -177,6 +174,10 @@ class RouteDiscovery(object):
             if match:
                 available_dvers.append(match.group(1))
         return available_dvers
+
+    def get_dvers_for_route_by_name(self, route_name):
+        route = self.routes[route_name]
+        return self.get_dvers_for_route(route)
 
     def get_valid_osg_routes(self):
         valid_osg_routes = {}
@@ -218,11 +219,7 @@ class RouteDiscovery(object):
         return osg_route_aliases
 
     def validate_route_for_dver(self, route, dver):
-        """Ensure both sides of a route exist for the given dver.
-        Route is a pair of printf-style strings of a from_tag and a to_tag with
-        %s where the dver should go.
-        Raise YourTagsAreMessedUp if validation failed.
-        """
+        """ TODO """
         errors = []
         for tag_hint in route:
             tag = tag_hint % dver
@@ -230,6 +227,10 @@ class RouteDiscovery(object):
                 errors.append("%s is missing" % tag)
         if errors:
             raise YourTagsAreMessedUp("Error validating route %s: %s" % (route, "; ".join(errors)))
+
+    def validate_route_by_name_for_dver(self, route_name, dver):
+        route = self.routes[route_name]
+        return self.validate_route_for_dver(route, dver)
 
 
 def get_valid_tag_for_dver(tag_hint, dver):
@@ -320,7 +321,7 @@ class Promoter(object):
     def __init__(self, route):
         self.tag_pkg_args = {}
         self.rejects = []
-        self.from_tag_base, self.to_tag_base = VALID_ROUTES[route]
+        self.from_tag_base, self.to_tag_base = route
 
 
     def add_promotion(self, pkg_or_build):
@@ -516,7 +517,6 @@ def main(argv=None):
     global options
     global dvers
     global kojihelper
-    global VALID_ROUTES
 
     if argv is None:
         argv = sys.argv
@@ -524,20 +524,25 @@ def main(argv=None):
     kojihelper = KojiHelper(False)
 
     route_discovery = RouteDiscovery(kojihelper.get_tags())
-    VALID_ROUTES = route_discovery.valid_routes
+    valid_routes = route_discovery.get_routes()
 
-    options, pkgs_or_builds = parse_cmdline_args(argv)
+    options, pkgs_or_builds = parse_cmdline_args(valid_routes, argv)
 
     dvers = options.dvers
     route = options.route
 
+    dvers_for_route = route_discovery.get_dvers_for_route_by_name(route)
+    for dver in dvers:
+        if dver not in dvers_for_route:
+            raise Exception("%s not available for route %s" % (dver, route))
+
     if not options.dry_run:
         kojihelper.login_to_koji()
 
-    printf("Promoting from %s to %s for dvers: %s", VALID_ROUTES[route][0], VALID_ROUTES[route][1], ", ".join(dvers))
+    printf("Promoting from %s to %s for dvers: %s", valid_routes[route][0], valid_routes[route][1], ", ".join(dvers))
     printf("Examining the following packages/builds:\n%s", "\n".join(["'" + x + "'" for x in pkgs_or_builds]))
 
-    promoter = Promoter(route)
+    promoter = Promoter(valid_routes[route])
     for x in pkgs_or_builds:
         promoter.add_promotion(x)
 
