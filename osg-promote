@@ -28,6 +28,7 @@ from optparse import OptionParser
 kojihelper = None
 options = None
 dvers = []
+VALID_ROUTES = None
 
 class YourTagsAreMessedUp(Exception):
     pass
@@ -38,8 +39,8 @@ STATIC_VALID_ROUTES = {
     "old-upcoming": ["%s-osg-upcoming-development", "%s-osg-upcoming-testing"],
     "old-testing": ["%s-osg-development", "%s-osg-testing"],
     "old-contrib": ["%s-osg-testing", "%s-osg-contrib"],
-    # XXX These are for testing and should be removed once we switch over to the new koji tags
     "new-upcoming": ["osg-upcoming-%s-development", "osg-upcoming-%s-testing"],
+    # XXX v These are for testing and should be removed once we switch over to the new koji tags
     "new-testing": ["osg-3.1-%s-development", "osg-3.1-%s-testing"],
     "new-contrib": ["osg-3.1-%s-testing", "osg-3.1-%s-contrib"],
    }
@@ -116,119 +117,126 @@ def split_nvr(build):
         return []
 
 
-def get_osg_releases():
-    """Returns the available OSG releases (e.g. 3.1, 3.2, etc.)"""
-    tags = kojihelper.get_tags()
-    releases = set()
-    for tag in tags:
-        osg_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-release$")
-        match_obj = osg_pattern.search(tag)
-        if match_obj:
-            releases.add(match_obj.group(1))
-    return releases
-
-
-def get_testing_tags_osgvers_dvers(tags):
+class RouteDiscovery(object):
     osg_testing_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-testing$")
-    testing_tags_osgvers_dvers = []
-    for tag in tags:
-        match = osg_testing_pattern.search(tag)
-        if match:
-            testing_tags_osgvers_dvers.append((tag,) + match.group(1, 2))
-    return testing_tags_osgvers_dvers
 
-def get_valid_routes():
-    """Return available promotion routes as a dict of (from_tag, to_tag) pairs"""
-    valid_routes = {}
-    valid_routes += STATIC_VALID_ROUTES
-    valid_routes += get_valid_osg_routes()
+    def __init__(self, tags):
+        self.tags = tags
 
+        self.valid_routes = {}
+        self.valid_routes.update(STATIC_VALID_ROUTES)
+        self.valid_routes.update(self.get_valid_osg_routes())
 
-def validate_route(route, dver):
-    """Ensure both sides of a route exist for the given dver.
-    Route is a pair of printf-style strings of a from_tag and a to_tag with
-    %s where the dver should go.
-    """
-    from_tag = route[0] % dver
-    to_tag = route[1] % dver
-    tags = kojihelper.get_tags()
-    return (from_tag in tags and to_tag in tags)
-
-
-def get_valid_osg_routes():
-    valid_osg_routes = {}
-    osgvers = set()
-    tags = kojihelper.get_tags()
-    for testing_tag, osgver, dver in get_testing_tags_osgvers_dvers(tags):
-        osgvers.add(osgver)
-        devel_tag_hint = "osg-%s-%%s-development" % (osgver)
-        contrib_tag_hint = "osg-%s-%%s-contrib" % (osgver)
-        testing_tag_hint = "osg-%s-%%s-testing" % (osgver)
-
-        potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint),
-                            osgver + "-contrib": (testing_tag_hint, contrib_tag_hint)}
-
-        for route_name, route in potential_routes.iteritems():
-            if validate_route(route, dver):
-                valid_osg_routes[route_name] = route
+        self.dvers_for_routes = {}
+        for route_name in self.valid_routes:
+            dvers = self.get_valid_dvers_for_route(route_name)
+            if not dvers:
+                raise YourTagsAreMessedUp("Route %s has no valid dvers" % route_name)
             else:
-                raise YourTagsAreMessedUp("Can't make %s route, some tags are missing" % route_name)
+                self.dvers_for_routes[route_name] = dvers
 
-    # Get highest osgver
-    # TODO misses the case where there is a 3.2-testing but only a 3.1-contrib
-    highest_osgver = sorted(list(osgvers), cmp=(lambda a,b: cmp(a.split("."), b.split("."))))
-    highest_testing = '%s-testing' % highest_osgver
-    highest_contrib = '%s-contrib' % highest_osgver
-    if valid_osg_routes.has_key(highest_testing):
-        valid_osg_routes['testing'] = valid_osg_routes[highest_testing]
-    if valid_osg_routes.has_key(highest_contrib):
-        valid_osg_routes['contrib'] = valid_osg_routes[highest_contrib]
+    def get_highest_osgver(self):
+        def cmp_version(a, b):
+            return cmp(a.split('.'), b.split('.'))
 
-    return valid_osg_routes
-
-
-def get_valid_dvers_for_route(route):
-    """Return the available dvers for the given route ('route' is an index into valid_routes)"""
-    tags = kojihelper.get_tags()
-    tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[0]))
-    available_tags = [x for x in tags if tag_pattern.match(x)]
-    dver_pattern = re.compile(r'(el\d+)')
-    available_dvers = []
-    for tag in available_tags:
-        m = dver_pattern.search(tag)
-        if m:
-            available_dvers.append(m.group(1))
-    return available_dvers
-
-
-# TODO This should not raise an exception
-def get_tag(pattern, dver=None):
-    """Return the name of a koji tag matching 'pattern' for 'dver'.
-    For example, get_tag('development', 'el5') returns 'el5-osg-development'
-    If 'dver' is None, then the dver is assumed to be part of 'pattern'.
-    Raise an Exception if no matching tag is found.
-
-    """
-    def get_first_tag(match, terms):
-        try:
-            return kojihelper.search_names(terms, 'tag', match)[0]
-        except IndexError:
+        osgvers = list(self.get_osgvers())
+        if osgvers:
+            return sorted(osgvers, cmp=cmp_version)[-1]
+        else:
             return None
-    if dver is None:
-        tag = (get_first_tag('exact', pattern) or get_first_tag('regex', re.escape(pattern) + ".*"))
-    else:
-        split_pattern = pattern.split("-", 1)
-        tag = (# New-style tags
-               get_first_tag('exact', '%s-%s-%s' % (split_pattern[0], dver, split_pattern[-1])) or # like hcc-el6-testing
-               get_first_tag('exact', "%s-%s" % (pattern, dver)) or # like uscms-el6
-               get_first_tag('regex', "%s-%s-%s.*" % (re.escape(split_pattern[0]), dver, re.escape(split_pattern[-1]))) or # like osg-el6-release-3.1.3
-               # old-style tags
-               get_first_tag('exact', "%s-%s" % (dver, pattern)) or # like el5-osg
-               get_first_tag('exact', "%s-osg-%s" % (dver, pattern)) or # like el5-osg-upcoming
-               get_first_tag('regex', "%s-(osg-)?%s.*" % (dver, re.escape(pattern))) # like el5-osg-release-3.1.3
-              )
-    if not tag:
-        raise Exception("Can't find tag %s or variations of it in koji" % pattern)
+
+    def get_osgvers(self):
+        """Returns the available OSG versions (e.g. 3.1, 3.2, etc.)"""
+        osgvers = set()
+        for tag in self.tags:
+            match_obj = self.osg_testing_pattern.search(tag)
+            if match_obj:
+                osgvers.add(match_obj.group(1))
+        return osgvers
+
+    def get_testing_tags_osgvers_dvers(self):
+        testing_tags_osgvers_dvers = []
+        for tag in self.tags:
+            match = self.osg_testing_pattern.search(tag)
+            if match:
+                testing_tags_osgvers_dvers.append((tag,) + match.group(1, 2))
+        return testing_tags_osgvers_dvers
+
+    def get_valid_dvers_for_route(self, route):
+        """Return the available dvers for the given route ('route' is an index
+        into valid_routes). Assume the route has been validated, i.e. for each
+        from_tag the corresponding to_tag exists.
+
+        """                                        # ^ TODO could be better
+        tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[0]))
+        available_tags = [x for x in self.tags if tag_pattern.match(x)]
+        dver_pattern = re.compile(r'(el\d+)')
+        available_dvers = []
+        for tag in available_tags:
+            match = dver_pattern.search(tag)
+            if match:
+                available_dvers.append(match.group(1))
+        return available_dvers
+
+    def get_valid_osg_routes(self):
+        valid_osg_routes = {}
+        valid_osg_routes.update(self.get_valid_versioned_osg_routes())
+        valid_osg_routes.update(self.get_osg_route_aliases(valid_osg_routes))
+
+        return valid_osg_routes
+
+    def get_valid_versioned_osg_routes(self):
+        valid_versioned_osg_routes = {}
+        for testing_tag, osgver, dver in self.get_testing_tags_osgvers_dvers():
+            devel_tag_hint = "osg-%s-%%s-development" % (osgver)
+            contrib_tag_hint = "osg-%s-%%s-contrib" % (osgver)
+            testing_tag_hint = "osg-%s-%%s-testing" % (osgver)
+
+            potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint),
+                                osgver + "-contrib": (testing_tag_hint, contrib_tag_hint)}
+
+            for route_name, route in potential_routes.iteritems():
+                self.validate_route_for_dver(route, dver)
+                valid_versioned_osg_routes[route_name] = route
+
+        return valid_versioned_osg_routes
+
+    def get_osg_route_aliases(self, valid_osg_routes):
+        # TODO misses the case where there is a 3.2-testing but only a 3.1-contrib
+        osg_route_aliases = {}
+        highest_osgver = self.get_highest_osgver()
+        if not highest_osgver or not valid_osg_routes:
+            osg_route_aliases['testing'] = STATIC_VALID_ROUTES['old-testing']
+            osg_route_aliases['upcoming'] = STATIC_VALID_ROUTES['old-upcoming']
+            osg_route_aliases['contrib'] = STATIC_VALID_ROUTES['old-contrib']
+        else:
+            for route_name in ['testing', 'contrib']:
+                highest_route_name = '%s-%s' % (highest_osgver, route_name)
+                if valid_osg_routes.has_key(highest_route_name):
+                    osg_route_aliases[route_name] = valid_osg_routes[highest_route_name]
+            osg_route_aliases['upcoming'] = STATIC_VALID_ROUTES['new-upcoming']
+        return osg_route_aliases
+
+    def validate_route_for_dver(self, route, dver):
+        """Ensure both sides of a route exist for the given dver.
+        Route is a pair of printf-style strings of a from_tag and a to_tag with
+        %s where the dver should go.
+        Raise YourTagsAreMessedUp if validation failed.
+        """
+        errors = []
+        for tag_hint in route:
+            tag = tag_hint % dver
+            if tag not in self.tags:
+                errors.append("%s is missing" % tag)
+        if errors:
+            raise YourTagsAreMessedUp("Error validating route %s: %s" % (route, "; ".join(errors)))
+
+
+def get_valid_tag_for_dver(tag_hint, dver):
+    """ TODO """
+    tag = tag_hint % dver
+    if not kojihelper.get_first_tag('exact', tag):
+        raise YourTagsAreMessedUp("Can't find tag %s in koji" % tag)
     return tag
 
 
@@ -239,11 +247,13 @@ def split_dver(build):
     Return the empty string for the dver if it's not in the NVR.
 
     """
-    pattern = re.compile(r".(el\d)$")
+    pattern = re.compile(r".(el\d+)$")
     nvr_no_dver = pattern.sub("", build)
     dver = pattern.search(build)
     return (nvr_no_dver, dver and dver.group(1) or "")
 
+def trim_dver(build):
+    return split_dver(build)[0]
 
 
 def get_builds(tag_base, pkg_or_build):
@@ -269,9 +279,9 @@ def get_builds(tag_base, pkg_or_build):
     builds = {}
     # Find each build for all dvers matching pkg_or_build
     for dver in dvers:
-        tag = get_tag(tag_base, dver)
+        tag = get_valid_tag_for_dver(tag_base, dver)
 
-        pkg_or_build_no_dver, _ = split_dver(pkg_or_build)
+        pkg_or_build_no_dver = trim_dver(pkg_or_build)
         # Case 1: pkg_or_build is a build, in which case take off its dver
         # and put the current dver on, then find a build for that.
         build1 = kojihelper.get_build_in_tag(tag, "%s.%s" % (pkg_or_build_no_dver, dver))
@@ -295,7 +305,7 @@ def get_builds(tag_base, pkg_or_build):
     # find builds where the VERSION-RELEASEs (without dver) are distinct
     # between the dvers we are running the script for, and reject them.
     vrs = ['-'.join(split_nvr(builds[x])[1:]) for x in builds]
-    vrs_no_dver = [split_dver(x)[0] for x in vrs]
+    vrs_no_dver = [trim_dver(x) for x in vrs]
     if len(set(vrs_no_dver)) > 1:
         printf("Warning: The versions of the builds matching %s are distinct across dvers.", pkg_or_build, end='')
         if not options.ignore_rejects:
@@ -323,7 +333,7 @@ class Promoter(object):
             self.rejects.append(pkg_or_build)
         else:
             for dver in builds:
-                to_tag = get_tag(self.to_tag_base, dver)
+                to_tag = get_valid_tag_for_dver(self.to_tag_base, dver)
 
                 build = builds[dver]
                 self.tag_pkg_args.setdefault(to_tag, [])
@@ -428,7 +438,7 @@ class KojiHelper(kojiinter.KojiLibInter):
 
     def __init__(self, do_login):
         "Connect to koji-hub. Authenticate if 'do_login' is True."
-        kojiinter.KojiLibInter.__init__(self)
+        super(KojiHelper, self).__init__()
         self.read_config_file()
         self.init_koji_session(login=do_login)
 
@@ -450,6 +460,12 @@ class KojiHelper(kojiinter.KojiLibInter):
         """Return a URI to the kojiweb page of the build with the given NVR"""
         buildinfo = self.kojisession.getBuild(build)
         return ("https://koji-hub.batlab.org/koji/buildinfo?buildID=%d" % int(buildinfo['id']))
+
+    def get_first_tag(self, match, terms):
+        try:
+            return self.search_names(terms, 'tag', match)[0]
+        except IndexError:
+            return None
 
     def get_latest_build(self, package, tag):
         """Return the NVR of the latest build of a package in a tag, or None"""
@@ -500,16 +516,22 @@ def main(argv=None):
     global options
     global dvers
     global kojihelper
+    global VALID_ROUTES
 
     if argv is None:
         argv = sys.argv
+
+    kojihelper = KojiHelper(True)
+
+    route_discovery = RouteDiscovery(kojihelper.get_tags())
+    VALID_ROUTES = route_discovery.valid_routes
 
     options, pkgs_or_builds = parse_cmdline_args(argv)
 
     dvers = options.dvers
     route = options.route
 
-    kojihelper = KojiHelper(do_login=not options.dry_run)
+    #kojihelper = KojiHelper(do_login=not options.dry_run)
 
     printf("Promoting from %s to %s for dvers: %s", VALID_ROUTES[route][0], VALID_ROUTES[route][1], ", ".join(dvers))
     printf("Examining the following packages/builds:\n%s", "\n".join(["'" + x + "'" for x in pkgs_or_builds]))
