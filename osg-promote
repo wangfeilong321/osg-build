@@ -377,11 +377,11 @@ class Promoter(object):
         if not options.dry_run:
             promoted_builds = watch_builds(tasks)
 
-        if options.regen:
-            print "--- Regenerating repos"
-            kojihelper.regen_repos(tags_to_regen=self.tag_pkg_args.keys())
+            if options.regen:
+                print "--- Regenerating repos"
+                kojihelper.regen_repos(tags_to_regen=self.tag_pkg_args.keys())
 
-        return promoted_builds
+            return promoted_builds
 
 
 def watch_builds(tasks):
@@ -534,12 +534,17 @@ def main(argv=None):
     dvers_for_route = route_discovery.get_dvers_for_route_by_name(route)
     for dver in dvers:
         if dver not in dvers_for_route:
-            raise Exception("%s not available for route %s" % (dver, route))
+            printf("The dver %s is not available for route %s.", dver, route)
+            printf("The available dvers for that route are: %s", ", ".join(dvers_for_route))
+            sys.exit(1)
 
     if not options.dry_run:
         kojihelper.login_to_koji()
 
-    printf("Promoting from %s to %s for dvers: %s", valid_routes[route][0], valid_routes[route][1], ", ".join(dvers))
+    printf("Promoting from %s to %s for dvers: %s",
+           valid_routes[route][0] % 'el*',
+           valid_routes[route][1] % 'el*',
+           ", ".join(dvers))
     printf("Examining the following packages/builds:\n%s", "\n".join(["'" + x + "'" for x in pkgs_or_builds]))
 
     promoter = Promoter(valid_routes[route])
@@ -566,7 +571,7 @@ def main(argv=None):
 
     if proceed:
         promoted_builds = promoter.do_promotions()
-        if options.output_format != 'none':
+        if not options.dry_run and options.output_format != 'none':
             printf("\nTwiki code for this set of promotions:\n")
             write_twiki(promoted_builds)
     else:
