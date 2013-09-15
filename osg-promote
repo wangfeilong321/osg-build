@@ -25,13 +25,12 @@ from osgbuild.utils import printf, print_table
 from optparse import OptionParser
 
 
-kwrap = None
-ksession = None
-tagged_builds_cache = {}
-tagged_packages_cache = {}
-tags_cache = []
+kojihelper = None
 options = None
 dvers = []
+
+class YourTagsAreMessedUp(Exception):
+    pass
 
 VALID_DVERS = ["el5", "el6"]
 STATIC_VALID_ROUTES = {
@@ -108,24 +107,6 @@ def parse_cmdline_args(argv):
     return (options, args)
 
 
-def get_latest_build(package, tag):
-    """Return the NVR of the latest build of a package in a tag, or None"""
-    data = ksession.listTagged(tag, latest=True, package=package)
-    if not data:
-        return None
-    else:
-        try:
-            return data[0]['nvr']
-        except KeyError:
-            return None
-
-
-def get_build_uri(build):
-    """Return a URI to the kojiweb page of the build with the given NVR"""
-    buildinfo = ksession.getBuild(build)
-    return ("https://koji-hub.batlab.org/koji/buildinfo?buildID=%d" % int(buildinfo['id']))
-
-
 def split_nvr(build):
     """Split an NVR into a [Name, Version, Release] list"""
     match = re.match(r"(?P<name>.+)-(?P<version>[^-]+)-(?P<release>[^-]+)$", build)
@@ -135,17 +116,9 @@ def split_nvr(build):
         return []
 
 
-def get_tags():
-    """Return a list of all tag names"""
-    if not tags_cache:
-        data = ksession.listTags(None, None)
-        tags_cache = [x['name'] for x in data]
-    return tags_cache
-
-
 def get_osg_releases():
     """Returns the available OSG releases (e.g. 3.1, 3.2, etc.)"""
-    tags = get_tags()
+    tags = kojihelper.get_tags()
     releases = set()
     for tag in tags:
         osg_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-release$")
@@ -155,39 +128,68 @@ def get_osg_releases():
     return releases
 
 
+def get_testing_tags_osgvers_dvers(tags):
+    osg_testing_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-testing$")
+    testing_tags_osgvers_dvers = []
+    for tag in tags:
+        match = osg_testing_pattern.search(tag)
+        if match:
+            testing_tags_osgvers_dvers.append((tag,) + match.group(1, 2))
+    return testing_tags_osgvers_dvers
+
 def get_valid_routes():
     """Return available promotion routes as a dict of (from_tag, to_tag) pairs"""
-    valid_routes = dict()
+    valid_routes = {}
     valid_routes += STATIC_VALID_ROUTES
-    tags = get_tags()
-    for tag in tags:
-        osg_testing_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-testing$")
-        match_obj = osg_testing_pattern.search(tag):
-        if match_obj:
-            osgver = match_obj.group(1)
-            dver = match_obj.group(2)
-            development_tag = "osg-%s-%s-development" % (osgver, dver)
-            contrib_tag = "osg-%s-%s-contrib" % (osgver, dver)
-            if development_tag in tags:
-                route = osgver + "-testing"
-                if route not in valid_routes:
-                    valid_routes[route] = ["osg-" + osgver + "-%s-development", "osg-" + osgver + "-%s-testing"]
-            else:
-                printf("WARNING: testing tag %s with no corresponding development tag %s", tag, development_tag)
-            if contrib_tag in tags:
-                route = osgver + "-contrib"
-                if route not in valid_routes:
-                    valid_routes[route] = ["osg-" + osgver + "-%s-testing", "osg-" + osgver + "-%s-contrib"]
-            else:
-                printf("WARNING: testing tag %s with no corresponding contrib tag %s", tag, contrib_tag)
-    # TODO: Add aliases
+    valid_routes += get_valid_osg_routes()
 
-    return valid_routes
+
+def validate_route(route, dver):
+    """Ensure both sides of a route exist for the given dver.
+    Route is a pair of printf-style strings of a from_tag and a to_tag with
+    %s where the dver should go.
+    """
+    from_tag = route[0] % dver
+    to_tag = route[1] % dver
+    tags = kojihelper.get_tags()
+    return (from_tag in tags and to_tag in tags)
+
+
+def get_valid_osg_routes():
+    valid_osg_routes = {}
+    osgvers = set()
+    tags = kojihelper.get_tags()
+    for testing_tag, osgver, dver in get_testing_tags_osgvers_dvers(tags):
+        osgvers.add(osgver)
+        devel_tag_hint = "osg-%s-%%s-development" % (osgver)
+        contrib_tag_hint = "osg-%s-%%s-contrib" % (osgver)
+        testing_tag_hint = "osg-%s-%%s-testing" % (osgver)
+
+        potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint),
+                            osgver + "-contrib": (testing_tag_hint, contrib_tag_hint)}
+
+        for route_name, route in potential_routes.iteritems():
+            if validate_route(route, dver):
+                valid_osg_routes[route_name] = route
+            else:
+                raise YourTagsAreMessedUp("Can't make %s route, some tags are missing" % route_name)
+
+    # Get highest osgver
+    # TODO misses the case where there is a 3.2-testing but only a 3.1-contrib
+    highest_osgver = sorted(list(osgvers), cmp=(lambda a,b: cmp(a.split("."), b.split("."))))
+    highest_testing = '%s-testing' % highest_osgver
+    highest_contrib = '%s-contrib' % highest_osgver
+    if valid_osg_routes.has_key(highest_testing):
+        valid_osg_routes['testing'] = valid_osg_routes[highest_testing]
+    if valid_osg_routes.has_key(highest_contrib):
+        valid_osg_routes['contrib'] = valid_osg_routes[highest_contrib]
+
+    return valid_osg_routes
 
 
 def get_valid_dvers_for_route(route):
     """Return the available dvers for the given route ('route' is an index into valid_routes)"""
-    tags = get_tags()
+    tags = kojihelper.get_tags()
     tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[0]))
     available_tags = [x for x in tags if tag_pattern.match(x)]
     dver_pattern = re.compile(r'(el\d+)')
@@ -197,24 +199,6 @@ def get_valid_dvers_for_route(route):
         if m:
             available_dvers.append(m.group(1))
     return available_dvers
-
-
-def get_tagged_builds(tag):
-    """Return a list of NVRs of all builds in a tag"""
-    data = ksession.listTagged(tag)
-    return [x['nvr'] for x in data]
-
-
-def get_tagged_builds_latest(tag):
-    """Return a list of NVRs of the latest builds of each package in a tag"""
-    data = ksession.listTagged(tag, latest=True)
-    return [x['nvr'] for x in data]
-
-
-def get_tagged_packages(tag):
-    """Return all package names in a tag"""
-    data = ksession.listPackages(tagID=ksession.getTag(tag)['id'], inherited=True)
-    return [x['package_name'] for x in data]
 
 
 # TODO This should not raise an exception
@@ -227,7 +211,7 @@ def get_tag(pattern, dver=None):
     """
     def get_first_tag(match, terms):
         try:
-            return kwrap.search_names(terms, 'tag', match)[0]
+            return kojihelper.search_names(terms, 'tag', match)[0]
         except IndexError:
             return None
     if dver is None:
@@ -261,24 +245,6 @@ def split_dver(build):
     return (nvr_no_dver, dver and dver.group(1) or "")
 
 
-def get_build_in_tag(tag, pkg_or_build):
-    """Return the build matching 'pkg_or_build' in 'tag'.
-    If pkg_or_build is not in the tag, returns None. Otherwise:
-    If pkg_or_build is a package, returns the latest build for that
-    package. If pkg_or_build is a build, it is returned unchanged.
-
-    """
-    if (not tagged_packages_cache or tagged_packages_cache.get(tag) is None
-            or not tagged_builds_cache or tagged_builds_cache.get(tag) is None):
-        populate_caches(tag)
-
-    if pkg_or_build in tagged_packages_cache[tag]:
-        return get_latest_build(pkg_or_build, tag)
-    elif pkg_or_build in tagged_builds_cache[tag]:
-        return pkg_or_build
-    else:
-        return None
-
 
 def get_builds(tag_base, pkg_or_build):
     """Get a dict of builds keyed by dver for pkg_or_build.
@@ -308,10 +274,10 @@ def get_builds(tag_base, pkg_or_build):
         pkg_or_build_no_dver, _ = split_dver(pkg_or_build)
         # Case 1: pkg_or_build is a build, in which case take off its dver
         # and put the current dver on, then find a build for that.
-        build1 = get_build_in_tag(tag, "%s.%s" % (pkg_or_build_no_dver, dver))
+        build1 = kojihelper.get_build_in_tag(tag, "%s.%s" % (pkg_or_build_no_dver, dver))
         # Case 2: pkg_or_build is a package, in which case putting a dver
         # on doesn't help--just find the latest build in the tag.
-        build2 = get_build_in_tag(tag, pkg_or_build_no_dver)
+        build2 = kojihelper.get_build_in_tag(tag, pkg_or_build_no_dver)
 
         build = build1 or build2
         if not build:
@@ -383,7 +349,7 @@ class Promoter(object):
             for build in builds:
                 try:
                     # Make sure the build isn't already in tag
-                    if build in tagged_builds_cache[tag]:
+                    if build in kojihelper.get_tagged_builds(tag):
                         printf("Skipping %s, already in %s", build, tag)
                         continue
                 except KeyError:
@@ -392,7 +358,7 @@ class Promoter(object):
                 build_no_dver, dver = split_dver(build)
                 # Launch the builds
                 if not options.dry_run:
-                    task_id = kwrap.tag_build(tag, build)
+                    task_id = kojihelper.tag_build(tag, build)
                     tasks[task_id] = (build_no_dver, dver, build)
                 else:
                     printf("tagBuild('%s', '%s')", tag, build)
@@ -401,33 +367,24 @@ class Promoter(object):
             promoted_builds = watch_builds(tasks)
 
         if options.regen:
-            regen_repos(tags_to_regen=self.tag_pkg_args.keys())
+            print "--- Regenerating repos"
+            kojihelper.regen_repos(tags_to_regen=self.tag_pkg_args.keys())
 
         return promoted_builds
 
 
 def watch_builds(tasks):
-    kwrap.watch_tasks(list(tasks.keys()))
+    kojihelper.watch_tasks(list(tasks.keys()))
 
     promoted_builds = {}
     for task_id in tasks:
         build_no_dver, dver, build = tasks[task_id]
-        if get_task_state(task_id) == 'CLOSED':
+        if kojihelper.get_task_state(task_id) == 'CLOSED':
             promoted_builds.setdefault(build_no_dver, dict())
             promoted_builds[build_no_dver][dver] = build
         else:
             printf("* Error promoting build %s", build)
 
-
-def get_task_state(task_id):
-    """Return the symbolic state of the task (e.g. OPEN, CLOSED, etc.) as a string"""
-    return kojiinter.KojiLibInter.TASK_STATES[ksession.getTaskInfo(task_id)['state']]
-
-
-def regen_repos(tags_to_regen):
-    printf("--- Regenerating repos")
-    for tag in tags_to_regen:
-        kwrap.watch_tasks([kwrap.regen_repo(tag)])
 
 
 def write_twiki(builds):
@@ -440,7 +397,7 @@ def write_twiki(builds):
         for dver in dvers:
             for build_no_dver in sorted(builds):
                 build = builds[build_no_dver][dver]
-                out.write("   * [[%s][%s]]\n" % (get_build_uri(build), build))
+                out.write("   * [[%s][%s]]\n" % (kojihelper.get_build_uri(build), build))
     elif options.output_format == 'old' or options.output_format == 'prerelnote':
         # Old (current) format, used in PreReleaseNotes
         # | DATE | build-1-2.osg (el5+el6) |
@@ -454,7 +411,7 @@ def write_twiki(builds):
             build_links = []
             for dver in sorted(builds[build_no_dver]):
                 build = builds[build_no_dver][dver]
-                build_links.append("[[%s][%s]]" % (get_build_uri(build), dver))
+                build_links.append("[[%s][%s]]" % (kojihelper.get_build_uri(build), dver))
             out.write("(" + "+".join(build_links) + ")")
             out.write(" |\n")
     elif options.output_format == 'none':
@@ -464,26 +421,85 @@ def write_twiki(builds):
         print >> sys.stderr, "Unknown output format!"
 
 
-def init_koji_session(do_login):
-    "Connect to koji-hub. Authenticate if 'do_login' is True."
-    global kwrap
-    global ksession
+class KojiHelper(kojiinter.KojiLibInter):
+    tags_cache = []
+    tagged_builds_cache = {}
+    tagged_packages_cache = {}
 
-    kwrap = kojiinter.KojiLibInter()
-    kwrap.read_config_file()
-    kwrap.init_koji_session(login=do_login)
-    ksession = kwrap.kojisession
+    def __init__(self, do_login):
+        "Connect to koji-hub. Authenticate if 'do_login' is True."
+        kojiinter.KojiLibInter.__init__(self)
+        self.read_config_file()
+        self.init_koji_session(login=do_login)
 
+    def get_build_in_tag(self, tag, pkg_or_build):
+        """Return the build matching 'pkg_or_build' in 'tag'.
+        If pkg_or_build is not in the tag, returns None. Otherwise:
+        If pkg_or_build is a package, returns the latest build for that
+        package. If pkg_or_build is a build, it is returned unchanged.
 
-def populate_caches(tag):
-    "Fill up builds cache and packages cache for tag"
-    tagged_builds_cache[tag] = get_tagged_builds(tag)
-    tagged_packages_cache[tag] = [split_nvr(x)[0] for x in tagged_builds_cache[tag]]
+        """
+        if pkg_or_build in self.get_tagged_packages(tag):
+            return self.get_latest_build(pkg_or_build, tag)
+        elif pkg_or_build in self.get_tagged_builds(tag):
+            return pkg_or_build
+        else:
+            return None
+
+    def get_build_uri(self, build):
+        """Return a URI to the kojiweb page of the build with the given NVR"""
+        buildinfo = self.kojisession.getBuild(build)
+        return ("https://koji-hub.batlab.org/koji/buildinfo?buildID=%d" % int(buildinfo['id']))
+
+    def get_latest_build(self, package, tag):
+        """Return the NVR of the latest build of a package in a tag, or None"""
+        data = self.kojisession.listTagged(tag, latest=True, package=package)
+        if not data:
+            return None
+        else:
+            try:
+                return data[0]['nvr']
+            except KeyError:
+                return None
+
+    def get_tagged_builds(self, tag):
+        """Return a list of NVRs of all builds in a tag"""
+        if not KojiHelper.tagged_builds_cache.has_key(tag):
+            data = self.kojisession.listTagged(tag)
+            KojiHelper.tagged_builds_cache[tag] = [x['nvr'] for x in data]
+        return KojiHelper.tagged_builds_cache[tag]
+
+    def get_tagged_packages(self, tag):
+        """Return a list of names of all builds in a tag"""
+        if not KojiHelper.tagged_packages_cache.has_key(tag):
+            KojiHelper.tagged_packages_cache[tag] = [split_nvr(x)[0] for x in self.get_tagged_builds(tag)]
+        return KojiHelper.tagged_packages_cache[tag]
+
+    def get_tags(self):
+        """Return a list of all tag names"""
+        if not KojiHelper.tags_cache:
+            data = self.kojisession.listTags(None, None)
+            KojiHelper.tags_cache = [x['name'] for x in data]
+        return KojiHelper.tags_cache
+
+    def get_task_state(self, task_id):
+        """Return the symbolic state of the task (e.g. OPEN, CLOSED, etc.) as a string"""
+        return self.TASK_STATES[self.kojisession.getTaskInfo(task_id)['state']]
+
+    def regen_repos(self, tags_to_regen):
+        """Regenerate the repos corresponding to the given tags.
+        'tags_to_regen' is a list of strings.
+        Waits for completion.
+
+        """
+        for tag in tags_to_regen:
+            self.watch_tasks([self.regen_repo(tag)])
 
 
 def main(argv=None):
     global options
     global dvers
+    global kojihelper
 
     if argv is None:
         argv = sys.argv
@@ -493,10 +509,7 @@ def main(argv=None):
     dvers = options.dvers
     route = options.route
 
-
-    init_koji_session(not options.dry_run)
-    for tag in (get_tag(tag_base, dver) for tag_base in VALID_ROUTES[route] for dver in dvers):
-        populate_caches(tag)
+    kojihelper = KojiHelper(do_login=not options.dry_run)
 
     printf("Promoting from %s to %s for dvers: %s", VALID_ROUTES[route][0], VALID_ROUTES[route][1], ", ".join(dvers))
     printf("Examining the following packages/builds:\n%s", "\n".join(["'" + x + "'" for x in pkgs_or_builds]))
