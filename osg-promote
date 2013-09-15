@@ -2,7 +2,7 @@
 """A package promotion script for OSG"""
 
 
-STATIC_VALID_ROUTES = {
+STATIC_ROUTES = {
     "hcc": ["hcc-%s-testing", "hcc-%s-release"],
     "old-upcoming": ["%s-osg-upcoming-development", "%s-osg-upcoming-testing"],
     "old-testing": ["%s-osg-development", "%s-osg-testing"],
@@ -25,11 +25,12 @@ from osgbuild.utils import printf, print_table
 from optparse import OptionParser
 
 
-class YourTagsAreMessedUp(Exception):
-    """Raised when Koji tags are in an inconsistent state
+class KojiTagsAreMessedUp(Exception):
+    """Raised when Koji tags are in an inconsistent or unusable state.
 
     This can happen if one half of a route does not exist for a given dver
-    (e.g. osg-3.1-el5-development exists but not osg-3.1-el5-testing)
+    (e.g. osg-3.1-el5-development exists but not osg-3.1-el5-testing).
+    It can also happen if a route does not exist for any dvers.
     """
 
 #
@@ -71,65 +72,61 @@ def trim_dver(build):
 
 class RouteDiscovery(object):
     """For discovering and validating promotion routes.
-    In addition to including the predefined routes (from STATIC_VALID_ROUTES),
+    In addition to including the predefined routes (from STATIC_ROUTES),
     also looks for new-style osg routes (with tags of the form
     osg-M.N-elX-{development,testing,contrib} or
     osg-upcoming-elX-{development,testing}), and discovers which dvers
     each route is good for.
 
+    Some terminology:
+      * 'dver' is 'el5', 'el6', 'el7', etc.
+      * 'osgver' is '3.1', '3.2', etc.
+      * a tag_hint is the name of a koji tag with %s where the dver would go,
+        e.g. '%s-upcoming-development'
+      * a route is a from_tag_hint, to_tag_hint pair
+      * a route is valid for a dver if tags exist for both the from_tag and the
+        to_tag (obtained by filling in the dver for the tag_hints)
+      * a route is valid if it is valid for any dver
     """
-    osg_testing_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-testing$")
 
     def __init__(self, tags):
         """'tags' is a list of strings, generally produced by running
-        KojiHelper.get_tags()
+        KojiHelper.get_tags(). Can raise KojiTagsAreMessedUp if problems are
+        found with the tags.
         """
         self.tags = tags
-        self.routes = {}
-        self.dvers_for_routes = {}
+        self.routes = self.discover_routes()
+        self.dvers_for_routes = self.discover_dvers_for_routes(self.routes)
 
-    def get_routes(self):
-        """Return a dict of routes that were discovered.
-        Each route is a (from_tag_hint, to_tag_hint) pair (where a tag_hint
-        is the name of a tag with '%s' where the dver would be).
+    def discover_routes(self):
+        """Create and return a dict of routes keyed by a name (e.g. 'testing').
+        Includes both statically defined routes and OSG routes.
 
         """
-        if not self.routes:
-            self.routes.update(STATIC_VALID_ROUTES)
-            self.routes.update(self.get_valid_osg_routes())
+        routes = STATIC_ROUTES.copy()
+        routes.update(self.get_valid_osg_routes())
+        return routes
 
-            self.dvers_for_routes = {}
-            for route_name, route in self.routes.iteritems():
-                dvers = self.get_dvers_for_route(route)
-                if not dvers:
-                    raise YourTagsAreMessedUp("Route %s has no valid dvers" % route_name)
-                else:
-                    self.dvers_for_routes[route_name] = dvers
+    def discover_dvers_for_routes(self, routes):
+        """Find and return a dict of dvers for given routes. Values are keyed
+        by the route name (i.e. the key in routes)
+
+        """
+        dvers_for_routes = {}
+        for route_name, route in routes.iteritems():
+            dvers = self.get_dvers_for_route(route)
+            if not dvers:
+                raise KojiTagsAreMessedUp("Route %s has no valid dvers" % route_name)
+            else:
+                dvers_for_routes[route_name] = dvers
+        return dvers_for_routes
+
+    def get_routes(self):
+        """Return a dict of routes that were discovered."""
         return self.routes
 
-    def get_highest_osgver(self):
-        """Return the highest OSG major version (e.g. 3.1, 3.2) found"""
-        def _cmp_version(a, b): # pylint: disable=C0103,C0111
-            return cmp(a.split('.'), b.split('.'))
-
-        osgvers = list(self.get_osgvers())
-        if osgvers:
-            return sorted(osgvers, cmp=_cmp_version)[-1]
-        else:
-            return None
-
-    def get_osgvers(self):
-        """Return the available OSG major versions (e.g. 3.1, 3.2) as a set"""
-        osgvers = set()
-        for tag in self.tags:
-            match_obj = self.osg_testing_pattern.search(tag)
-            if match_obj:
-                osgvers.add(match_obj.group(1))
-        return osgvers
-
     def get_dvers_for_route(self, route):
-        """Return the dvers (as a list of strings) a route supports
-        'route' is given as a (from_tag_hint, to_tag_hint) pair."""
+        """Return the dvers (as a list of strings) a route supports"""
         tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[0]))
         available_tags = [x for x in self.tags if tag_pattern.match(x)]
         dver_pattern = re.compile(r'(el\d+)')
@@ -140,12 +137,13 @@ class RouteDiscovery(object):
                 available_dvers.append(match.group(1))
         return available_dvers
 
-    def get_dvers_for_route_by_name(self, route_name):
+    def get_dvers_for_route_by_name(self, route_name, routes=None):
         """Return the dvers (as a list of strings) a route supports
-        'route' is a key in the 'routes' dictionary.
+        'route_name' is a key in the 'routes' dictionary.
 
         """
-        route = self.routes[route_name]
+        routes = routes or self.routes
+        route = routes[route_name]
         return self.get_dvers_for_route(route)
 
     def get_valid_osg_routes(self):
@@ -155,8 +153,7 @@ class RouteDiscovery(object):
         route for testing).
 
         """
-        valid_osg_routes = {}
-        valid_osg_routes.update(self.get_valid_versioned_osg_routes())
+        valid_osg_routes = self.get_valid_versioned_osg_routes()
         valid_osg_routes.update(self.get_osg_route_aliases(valid_osg_routes))
 
         return valid_osg_routes
@@ -182,57 +179,81 @@ class RouteDiscovery(object):
         return valid_versioned_osg_routes
 
     def _get_osgvers_dvers(self):
-        """Helper function for get_valid_versioned_osg_routes
-        Finds osg-testing tags (i.e. tags matching osg_testing_pattern) and
+        """Helper for get_valid_versioned_osg_routes
+        Finds osg-testing tags (i.e. tags like 'osg-3.1-el5-testing') and
         returns a list of tuples containing:
         - the OSG major version as a string (e.g. '3.1')
         - the dver of the tag as a string (e.g. 'el5')
 
         """
+        osg_testing_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-testing$")
         osgvers_dvers = []
         for tag in self.tags:
-            match = self.osg_testing_pattern.search(tag)
+            match = osg_testing_pattern.search(tag)
             if match:
-                osgvers_dvers.append((tag,) + match.group(1, 2))
+                osgvers_dvers.append(match.group(1, 2))
         return osgvers_dvers
 
-    def get_osg_route_aliases(self, valid_osg_routes):
+    def get_osg_route_aliases(self, valid_versioned_osg_routes):
         """Get a dict of route aliases for the OSG routes.
-        The aliases are made using the following rules:
-        If no versioned OSG routes exist, then 'testing', 'upcoming', and
-        'contrib' are aliases to the old testing, upcoming and contrib routes
-        (e.g. ('%s-osg-development', '%s-osg-testing')), which are defined in
-        STATIC_ROUTES.
-        If versioned OSG routes exist, then 'testing' and 'contrib' are aliases
-        to the newest testing and contrib routes (e.g.
+        These aliases are 'testing', 'upcoming', and 'contrib'.
+
+        If the old OSG routes (e.g. 'old-testing') are still valid, the aliases
+        will point to the old OSG routes.
+
+        Otherwise, if versioned OSG routes exist, then 'testing' and 'contrib'
+        are aliases to the newest testing and contrib routes (e.g.
         'osg-3.2-%s-development') and 'upcoming' is an alias for the
         'new-upcoming' route in STATIC_ROUTES.
 
         Assumes routes have been validated.
-        Currently does not correctly handle the edge case where there aren't
-        both testing and contrib routes for the same osgver.
-        For example, if there is a '3.2-testing' but only a '3.1-contrib',
-        then it only creates the 'testing' alias.
 
         """
         osg_route_aliases = {}
-        highest_osgver = self.get_highest_osgver()
-        if not highest_osgver or not valid_osg_routes:
-            osg_route_aliases['testing'] = STATIC_VALID_ROUTES['old-testing']
-            osg_route_aliases['upcoming'] = STATIC_VALID_ROUTES['old-upcoming']
-            osg_route_aliases['contrib'] = STATIC_VALID_ROUTES['old-contrib']
-        else:
-            for route_name in ['testing', 'contrib']:
-                highest_route_name = '%s-%s' % (highest_osgver, route_name)
-                if valid_osg_routes.has_key(highest_route_name):
-                    osg_route_aliases[route_name] = valid_osg_routes[highest_route_name]
-            osg_route_aliases['upcoming'] = STATIC_VALID_ROUTES['new-upcoming']
+
+        for route_base in ['testing', 'contrib']:
+            old_route = 'old-%s' % route_base
+            if self.get_dvers_for_route_by_name(old_route, STATIC_ROUTES):
+                osg_route_aliases[route_base] = STATIC_ROUTES[old_route]
+            elif valid_versioned_osg_routes:
+                highest_route = self._get_highest_route(route_base, valid_versioned_osg_routes)
+                if highest_route:
+                    osg_route_aliases[route_base] = valid_versioned_osg_routes[highest_route]
+                else:
+                    raise KojiTagsAreMessedUp("No OSG route found for %s" % route_base)
+
+        if self.get_dvers_for_route_by_name('old-upcoming', STATIC_ROUTES):
+            osg_route_aliases['upcoming'] = STATIC_ROUTES['old-upcoming']
+        elif self.get_dvers_for_route_by_name('new-upcoming', STATIC_ROUTES):
+            osg_route_aliases['upcoming'] = STATIC_ROUTES['new-upcoming']
+
         return osg_route_aliases
+
+    # don't care that this can be a function: pylint: disable=R0201
+    def _get_highest_route(self, route_base, valid_osg_routes):
+        """Helper for get_osg_route_aliases.
+        Return the versioned OSG route matching route_base with the highest
+        version. For example, if the available routes are '3.1-testing' and
+        '3.2-testing', and route_base is 'testing', then this will return
+        '3.2-testing'.
+
+        Returns None if no such route exists.
+
+        """
+        def _cmp_version(a, b): # pylint: disable=C0103,C0111
+            return cmp(a.split('.'), b.split('.'))
+
+        pattern = re.compile("(\d+\.\d+)-%s" % route_base)
+        osgvers_for_route_base = [pattern.match(x).group(1) for x in valid_osg_routes if pattern.match(x)]
+        if osgvers_for_route_base:
+            highest_osgver = sorted(osgvers_for_route_base, cmp=_cmp_version)[-1]
+            return '%s-%s' % (highest_osgver, route_base)
+        else:
+            return None
 
     def validate_route_for_dver(self, route, dver):
         """Check that both sides of a route exist for the given dver.
-        'route' is a (from_tag_hint, to_tag_hint) pair. 'dver' is a string.
-        Returns nothing; raises YourTagsAreMessedUp if validation fails.
+        Returns nothing; raises KojiTagsAreMessedUp if validation fails.
 
         """
         errors = []
@@ -241,12 +262,11 @@ class RouteDiscovery(object):
             if tag not in self.tags:
                 errors.append("%s is missing" % tag)
         if errors:
-            raise YourTagsAreMessedUp("Error validating route %s: %s" % (route, "; ".join(errors)))
+            raise KojiTagsAreMessedUp("Error validating route %s: %s" % (route, "; ".join(errors)))
 
     def validate_route_by_name_for_dver(self, route_name, dver):
         """See validate_route_for_dver; 'route_name' is a key in the 'routes' dict."""
-        route = self.routes[route_name]
-        return self.validate_route_for_dver(route, dver)
+        return self.validate_route_for_dver(self.routes[route_name], dver)
 
 
 class Promoter(object):
@@ -393,7 +413,7 @@ class Promoter(object):
 
     def get_valid_tag_for_dver(self, tag_hint, dver):
         """Find tag_hint % dver in koji's list of tags (as queried via
-        kojihelper). Return the tag if found; raise YourTagsAreMessedUp if
+        kojihelper). Return the tag if found; raise KojiTagsAreMessedUp if
         not.
 
         RouteDiscovery should have already validated the route being used, but
@@ -402,7 +422,7 @@ class Promoter(object):
         """
         tag = tag_hint % dver
         if not self.kojihelper.get_first_tag('exact', tag):
-            raise YourTagsAreMessedUp("Can't find tag %s in koji" % tag)
+            raise KojiTagsAreMessedUp("Can't find tag %s in koji" % tag)
         return tag
 
 
@@ -427,6 +447,7 @@ class Promoter(object):
                 printf("* Error promoting build %s", build)
 
 
+# don't care if it has too many methods: pylint: disable=R0904
 class KojiHelper(kojiinter.KojiLibInter):
     """Extra utility functions for dealing with Koji"""
     tags_cache = []
@@ -535,7 +556,7 @@ def write_twiki(kojihelper, builds, dvers, output_format, no_date=False, out=Non
     if output_format == 'relnote':
         write_releasenotes(kojihelper, out, builds, dvers)
     elif output_format == 'old' or output_format == 'prerelnote':
-        write_prereleasenotes(kojihelper, out, builds, dvers, no_date)
+        write_prereleasenotes(kojihelper, out, builds, no_date)
     elif output_format == 'none':
         pass
     else:
@@ -552,7 +573,7 @@ def write_releasenotes(kojihelper, out, builds, dvers):
             build = builds[build_no_dver][dver]
             out.write("   * [[%s][%s]]\n" % (kojihelper.get_build_uri(build), build))
 
-def write_prereleasenotes(kojihelper, out, builds, dvers, no_date):
+def write_prereleasenotes(kojihelper, out, builds, no_date):
     """Write twiki output in PreReleaseNotes format. See write_twiki()"""
     # PreReleaseNotes format
     # | DATE | build-1-2.osg (el5+el6) |
@@ -581,11 +602,11 @@ def parse_cmdline_args(valid_routes, argv):
     # TODO: el5 and el6 arguments are currently hardcoded -- this means that
     # el7 support will require code changes despite the autodetection code in
     # RouteDiscovery.
-    parser = OptionParser("""
-    %prog -r|--route ROUTE [options] <packages or builds>
-    """)
+    helpstring = "%prog -r|--route ROUTE [options] <packages or builds>"
+    helpstring += "\n\nValid routes are:\n - " + "\n - ".join(sorted(valid_routes.keys()))
+    parser = OptionParser(helpstring)
     parser.add_option("-r", "--route", default="testing", type='choice', choices=valid_routes.keys(),
-                      help="The promotion route to use. Valid routes are: " + ", ".join(valid_routes.keys()))
+                      help="The promotion route to use.")
     parser.add_option("-n", "--dry-run", action="store_true", default=False,
                       help="Do not promote, just show what would be done")
     parser.add_option("--el5-only", action="store_false", dest='el6', default=True,
