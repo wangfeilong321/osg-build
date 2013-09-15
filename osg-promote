@@ -36,8 +36,6 @@ VALID_DVERS = ["el5", "el6"]
 VALID_ROUTES = {
     "testing": ["osg-development", "osg-testing"],
     "contrib": ["osg-development", "osg-contrib"],
-    "release": ["osg-testing", "osg-prerelease"],
-    "prerelease": ["osg-testing", "osg-prerelease"],
     "upcoming": ["osg-upcoming-development", "osg-upcoming-testing"],
     "hcc": ["hcc-testing", "hcc-release"],
    }
