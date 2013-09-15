@@ -109,9 +109,7 @@ def get_latest_build(package, tag):
     else:
         try:
             return data[0]['nvr']
-        except AttributeError:
-            return None
-        except IndexError:
+        except KeyError:
             return None
 
 
@@ -133,7 +131,7 @@ def get_tagged_builds(tag):
     """Return a list of NVRs of all builds in a tag"""
     data = ksession.listTagged(tag)
     return [x['nvr'] for x in data]
-    
+
 
 def get_tagged_builds_latest(tag):
     """Return a list of NVRs of the latest builds of each package in a tag"""
@@ -145,7 +143,7 @@ def get_tagged_packages(tag):
     """Return all package names in a tag"""
     data = ksession.listPackages(tagID=ksession.getTag(tag)['id'], inherited=True)
     return [x['package_name'] for x in data]
-    
+
 
 # TODO This should not raise an exception
 def get_tag(pattern, dver=None):
@@ -182,7 +180,7 @@ def split_dver(build):
     """Split out the dver from the NVR of 'build'.
     For example, split_dver("foobar-1-1.osg.el5") returns
     ("foobar-1-1.osg", "el5")
-    
+
     """
     pattern = re.compile(r".(el\d)$")
     nvr_no_dver = pattern.sub("", build)
@@ -214,7 +212,7 @@ def get_builds(tag_base, pkg_or_build):
     If pkg_or_build is a package, then it gets the latest version of the
     package in tag_base + dver.
     If pkg_or_build is a build, then it uses that specific version.
-    
+
     If options.ignore_rejects is False, then it can reject packages if
     either of the following apply:
     * pkg_or_build is a build and a build with that NVR is missing from
@@ -279,7 +277,7 @@ class Promoter(object):
     def add_promotion(self, pkg_or_build):
         """See if 'pkg_or_build' can be promoted, add the build to
         self.tag_pkg_args for each tag it should be added to.
-        
+
         """
         builds = get_builds(self.from_tag_base, pkg_or_build)
         if not builds and not options.ignore_rejects:
@@ -287,12 +285,12 @@ class Promoter(object):
         else:
             for dver in builds:
                 to_tag = get_tag(self.to_tag_base, dver)
-            
+
                 build = builds[dver]
                 self.tag_pkg_args.setdefault(to_tag, [])
                 self.tag_pkg_args[to_tag].append(build)
 
-        
+
     def do_promotions(self):
         """Tag all builds selected to be tagged in self.tag_pkg_args.
         self.tag_pkg_args is a list of (tag, [builds]) pairs.
@@ -342,13 +340,13 @@ class Promoter(object):
                     promoted_builds[build_no_dver][dver] = build
                 else:
                     printf("* Error promoting build %s", build)
-        
+
         # Regen repos
         if options.regen:
             printf("--- Regenerating repos")
             for tag in tags:
                 kwrap.watch_tasks([kwrap.regen_repo(tag)])
-        
+
         return promoted_builds
 
 
@@ -385,7 +383,7 @@ def write_twiki(builds):
         # Sanity check, but optparse should have caught this already
         print >> sys.stderr, "Unknown output format!"
 
-        
+
 def init_koji_session(do_login):
     "Connect to koji-hub. Authenticate if 'do_login' is True."
     global kwrap
@@ -409,7 +407,7 @@ def main(argv=None):
 
     if argv is None:
         argv = sys.argv
-    
+
     options, pkgs_or_builds = parse_cmdline_args(argv)
 
     dvers = options.dvers
@@ -437,7 +435,7 @@ def main(argv=None):
     else:
         printf("Nothing will be promoted!")
         return 1
-    
+
     question = "Proceed with promoting the builds?"
     try:
         proceed = (options.assume_yes or not sys.stdin.isatty() or utils.ask_yn(question))
