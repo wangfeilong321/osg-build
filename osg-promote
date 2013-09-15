@@ -29,24 +29,31 @@ kwrap = None
 ksession = None
 tagged_builds_cache = {}
 tagged_packages_cache = {}
+tags_cache = []
 options = None
 dvers = []
 
 VALID_DVERS = ["el5", "el6"]
-VALID_ROUTES = {
-    "testing": ["osg-development", "osg-testing"],
-    "contrib": ["osg-development", "osg-contrib"],
-    "upcoming": ["osg-upcoming-development", "osg-upcoming-testing"],
-    "hcc": ["hcc-testing", "hcc-release"],
+STATIC_VALID_ROUTES = {
+    "hcc": ["hcc-%s-testing", "hcc-%s-release"],
+    "old-upcoming": ["%s-osg-upcoming-development", "%s-osg-upcoming-testing"],
+    "old-testing": ["%s-osg-development", "%s-osg-testing"],
+    "old-contrib": ["%s-osg-testing", "%s-osg-contrib"],
+    # XXX These are for testing and should be removed once we switch over to the new koji tags
+    "new-upcoming": ["osg-upcoming-%s-development", "osg-upcoming-%s-testing"],
+    "new-testing": ["osg-3.1-%s-development", "osg-3.1-%s-testing"],
+    "new-contrib": ["osg-3.1-%s-testing", "osg-3.1-%s-contrib"],
    }
 
-def any(iterable):
+def any(iterable): # Don't warn about redefining this. pylint: disable=W0622
+    """True if any member of 'iterable' is true, False otherwise"""
     for element in iterable:
         if element:
             return True
     return False
 
 def parse_cmdline_args(argv):
+    """Return a tuple of (options, positional args)"""
     parser = OptionParser("""
     %prog -r|--route ROUTE [options] <packages or builds>
 """)
@@ -72,7 +79,7 @@ def parse_cmdline_args(argv):
     # ^ TODO Implement this
     parser.add_option("-y", "--assume-yes", action="store_true", default=False,
                       help="Do not prompt before promotion")
-    
+
     options, args = parser.parse_args(argv[1:])
 
     if not options.el5 and not options.el6:
@@ -114,6 +121,7 @@ def get_latest_build(package, tag):
 
 
 def get_build_uri(build):
+    """Return a URI to the kojiweb page of the build with the given NVR"""
     buildinfo = ksession.getBuild(build)
     return ("https://koji-hub.batlab.org/koji/buildinfo?buildID=%d" % int(buildinfo['id']))
 
@@ -125,6 +133,70 @@ def split_nvr(build):
         return [match.group('name'), match.group('version'), match.group('release')]
     else:
         return []
+
+
+def get_tags():
+    """Return a list of all tag names"""
+    if not tags_cache:
+        data = ksession.listTags(None, None)
+        tags_cache = [x['name'] for x in data]
+    return tags_cache
+
+
+def get_osg_releases():
+    """Returns the available OSG releases (e.g. 3.1, 3.2, etc.)"""
+    tags = get_tags()
+    releases = set()
+    for tag in tags:
+        osg_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-release$")
+        match_obj = osg_pattern.search(tag)
+        if match_obj:
+            releases.add(match_obj.group(1))
+    return releases
+
+
+def get_valid_routes():
+    """Return available promotion routes as a dict of (from_tag, to_tag) pairs"""
+    valid_routes = dict()
+    valid_routes += STATIC_VALID_ROUTES
+    tags = get_tags()
+    for tag in tags:
+        osg_testing_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-testing$")
+        match_obj = osg_testing_pattern.search(tag):
+        if match_obj:
+            osgver = match_obj.group(1)
+            dver = match_obj.group(2)
+            development_tag = "osg-%s-%s-development" % (osgver, dver)
+            contrib_tag = "osg-%s-%s-contrib" % (osgver, dver)
+            if development_tag in tags:
+                route = osgver + "-testing"
+                if route not in valid_routes:
+                    valid_routes[route] = ["osg-" + osgver + "-%s-development", "osg-" + osgver + "-%s-testing"]
+            else:
+                printf("WARNING: testing tag %s with no corresponding development tag %s", tag, development_tag)
+            if contrib_tag in tags:
+                route = osgver + "-contrib"
+                if route not in valid_routes:
+                    valid_routes[route] = ["osg-" + osgver + "-%s-testing", "osg-" + osgver + "-%s-contrib"]
+            else:
+                printf("WARNING: testing tag %s with no corresponding contrib tag %s", tag, contrib_tag)
+    # TODO: Add aliases
+
+    return valid_routes
+
+
+def get_valid_dvers_for_route(route):
+    """Return the available dvers for the given route ('route' is an index into valid_routes)"""
+    tags = get_tags()
+    tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[0]))
+    available_tags = [x for x in tags if tag_pattern.match(x)]
+    dver_pattern = re.compile(r'(el\d+)')
+    available_dvers = []
+    for tag in available_tags:
+        m = dver_pattern.search(tag)
+        if m:
+            available_dvers.append(m.group(1))
+    return available_dvers
 
 
 def get_tagged_builds(tag):
@@ -180,6 +252,7 @@ def split_dver(build):
     """Split out the dver from the NVR of 'build'.
     For example, split_dver("foobar-1-1.osg.el5") returns
     ("foobar-1-1.osg", "el5")
+    Return the empty string for the dver if it's not in the NVR.
 
     """
     pattern = re.compile(r".(el\d)$")
@@ -304,24 +377,19 @@ class Promoter(object):
         Return a list of builds successfully promoted.
 
         """
-        promoted_builds = {}
-
         printf("--- Tagging builds")
-        tags = set() # Which tags to regen if we're doing that
         tasks = dict()
         for tag, builds in self.tag_pkg_args.iteritems():
-            tags.add(tag)
             for build in builds:
                 try:
                     # Make sure the build isn't already in tag
                     if build in tagged_builds_cache[tag]:
                         printf("Skipping %s, already in %s", build, tag)
                         continue
-                except:
+                except KeyError:
                     pass
 
                 build_no_dver, dver = split_dver(build)
-                dver = dver or ''
                 # Launch the builds
                 if not options.dry_run:
                     task_id = kwrap.tag_build(tag, build)
@@ -329,25 +397,37 @@ class Promoter(object):
                 else:
                     printf("tagBuild('%s', '%s')", tag, build)
 
-        # Watch the builds
         if not options.dry_run:
-            kwrap.watch_tasks(list(tasks.keys()))
-            for task_id in tasks:
-                build_no_dver, dver, build = tasks[task_id]
-                err = kojiinter.KojiLibInter.TASK_STATES[ksession.getTaskInfo(task_id)['state']] != 'CLOSED'
-                if not err:
-                    promoted_builds.setdefault(build_no_dver, dict())
-                    promoted_builds[build_no_dver][dver] = build
-                else:
-                    printf("* Error promoting build %s", build)
+            promoted_builds = watch_builds(tasks)
 
-        # Regen repos
         if options.regen:
-            printf("--- Regenerating repos")
-            for tag in tags:
-                kwrap.watch_tasks([kwrap.regen_repo(tag)])
+            regen_repos(tags_to_regen=self.tag_pkg_args.keys())
 
         return promoted_builds
+
+
+def watch_builds(tasks):
+    kwrap.watch_tasks(list(tasks.keys()))
+
+    promoted_builds = {}
+    for task_id in tasks:
+        build_no_dver, dver, build = tasks[task_id]
+        if get_task_state(task_id) == 'CLOSED':
+            promoted_builds.setdefault(build_no_dver, dict())
+            promoted_builds[build_no_dver][dver] = build
+        else:
+            printf("* Error promoting build %s", build)
+
+
+def get_task_state(task_id):
+    """Return the symbolic state of the task (e.g. OPEN, CLOSED, etc.) as a string"""
+    return kojiinter.KojiLibInter.TASK_STATES[ksession.getTaskInfo(task_id)['state']]
+
+
+def regen_repos(tags_to_regen):
+    printf("--- Regenerating repos")
+    for tag in tags_to_regen:
+        kwrap.watch_tasks([kwrap.regen_repo(tag)])
 
 
 def write_twiki(builds):
