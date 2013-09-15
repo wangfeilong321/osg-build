@@ -1,32 +1,6 @@
 #!/usr/bin/python
 """A package promotion script for OSG"""
-# TODO: Implement --wiki
-# TODO: Do not attempt to promote a build if the build is already in the destination
-# TODO This code needs rewriting to use less globals and be less brittle.
-#      mostly because the above two todo items, while they look trivial, and
-#      should be trivial, aren't.
-#      The mix of what's in the 'Promoter' class and what isn't is also
-#      inconsistent.
 
-
-
-import glob
-import re
-import os
-import shutil
-import subprocess
-import sys
-import time
-import urllib
-
-from osgbuild import kojiinter
-from osgbuild import utils
-from osgbuild.utils import printf, print_table
-from optparse import OptionParser
-
-
-class YourTagsAreMessedUp(Exception):
-    pass
 
 STATIC_VALID_ROUTES = {
     "hcc": ["hcc-%s-testing", "hcc-%s-release"],
@@ -39,68 +13,35 @@ STATIC_VALID_ROUTES = {
     "new-contrib": ["osg-3.1-%s-testing", "osg-3.1-%s-contrib"],
    }
 
+
+import re
+import sys
+import time
+
+from osgbuild import constants
+from osgbuild import kojiinter
+from osgbuild import utils
+from osgbuild.utils import printf, print_table
+from optparse import OptionParser
+
+
+class YourTagsAreMessedUp(Exception):
+    """Raised when Koji tags are in an inconsistent state
+
+    This can happen if one half of a route does not exist for a given dver
+    (e.g. osg-3.1-el5-development exists but not osg-3.1-el5-testing)
+    """
+
+#
+# Utility functions
+#
+
 def any(iterable): # Don't warn about redefining this. pylint: disable=W0622
     """True if any member of 'iterable' is true, False otherwise"""
     for element in iterable:
         if element:
             return True
     return False
-
-def parse_cmdline_args(valid_routes, argv):
-    """Return a tuple of (options, positional args)"""
-    parser = OptionParser("""
-    %prog -r|--route ROUTE [options] <packages or builds>
-""")
-    parser.add_option("-r", "--route", default="testing", type='choice', choices=valid_routes.keys(),
-                      help="The promotion route to use. Valid routes are: " + ", ".join(valid_routes.keys()))
-    parser.add_option("-n", "--dry-run", action="store_true", default=False,
-                      help="Do not promote, just show what would be done")
-    parser.add_option("--el5-only", action="store_false", dest='el6', default=True,
-                      help="Promote only el5 packages.")
-    parser.add_option("--el6-only", action="store_false", dest='el5', default=True,
-                      help="Promote only el6 packages.")
-    parser.add_option("--ignore-rejects", dest="ignore_rejects", action="store_true", default=False,
-                      help="Ignore rejections due to version mismatch between dvers or missing package for one dver")
-    of_choices = ['old', 'prerelnote', 'relnote', 'none']
-    parser.add_option("--output-format", "--of", default='old', type='choice', choices=of_choices,
-                      help="Valid output formats are: " + ", ".join(of_choices))
-    parser.add_option("--no-date", "--nodate", default=False, action="store_true",
-                      help="Do not add the date to the wiki code")
-    parser.add_option("--regen", default=False, action="store_true",
-                      help="Regenerate repo(s) afterward")
-    parser.add_option("-w", "--wiki", "--twiki", default=False, action="store_true",
-                      help="Do not promote, only generate wiki code for the arguments. (Unimplemented)")
-    # ^ TODO Implement this
-    parser.add_option("-y", "--assume-yes", action="store_true", default=False,
-                      help="Do not prompt before promotion")
-
-    options, args = parser.parse_args(argv[1:])
-
-    if not options.el5 and not options.el6:
-        parser.error("Can't specify both --el5-only and --el6-only")
-
-    # optparse doesn't do 'append_const' in python 2.4 so simulate it
-    options.dvers = []
-    if options.el5: options.dvers.append('el5')
-    if options.el6: options.dvers.append('el6')
-
-    if options.route:
-        # User is allowed to specify the shortest unambiguous prefix of a route
-        matching_routes = [x for x in valid_routes.keys() if x.startswith(options.route)]
-        if len(matching_routes) > 1:
-            parser.error("Ambiguous route. Matching routes are: " + ", ".join(matching_routes))
-        elif not matching_routes:
-            parser.error("Invalid route. Valid routes are: " + ", ".join(valid_routes.keys()))
-        else:
-            options.route = matching_routes[0]
-    else:
-        parser.error("Missing required parameter '--route'")
-
-    if options.wiki:
-        options.dry_run = True
-
-    return (options, args)
-
 
 def split_nvr(build):
     """Split an NVR into a [Name, Version, Release] list"""
@@ -110,15 +51,49 @@ def split_nvr(build):
     else:
         return []
 
+def split_dver(build):
+    """Split out the dver from the NVR of 'build'.
+    For example, split_dver("foobar-1-1.osg.el5") returns
+    ("foobar-1-1.osg", "el5")
+    Return the empty string for the dver if it's not in the NVR.
+
+    """
+    pattern = re.compile(r".(el\d+)$")
+    nvr_no_dver = pattern.sub("", build)
+    dver = pattern.search(build)
+    return (nvr_no_dver, dver and dver.group(1) or "")
+
+def trim_dver(build):
+    """Remove the dver from the NVR of 'build'"""
+    return split_dver(build)[0]
+
+
 
 class RouteDiscovery(object):
+    """For discovering and validating promotion routes.
+    In addition to including the predefined routes (from STATIC_VALID_ROUTES),
+    also looks for new-style osg routes (with tags of the form
+    osg-M.N-elX-{development,testing,contrib} or
+    osg-upcoming-elX-{development,testing}), and discovers which dvers
+    each route is good for.
+
+    """
     osg_testing_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-testing$")
 
     def __init__(self, tags):
+        """'tags' is a list of strings, generally produced by running
+        KojiHelper.get_tags()
+        """
         self.tags = tags
         self.routes = {}
+        self.dvers_for_routes = {}
 
     def get_routes(self):
+        """Return a dict of routes that were discovered.
+        Each route is a (from_tag_hint, to_tag_hint) pair (where a tag_hint
+        is the name of a tag with '%s' where the dver would be).
+
+        """
         if not self.routes:
             self.routes.update(STATIC_VALID_ROUTES)
             self.routes.update(self.get_valid_osg_routes())
@@ -133,17 +108,18 @@ class RouteDiscovery(object):
         return self.routes
 
     def get_highest_osgver(self):
-        def cmp_version(a, b):
+        """Return the highest OSG major version (e.g. 3.1, 3.2) found"""
+        def _cmp_version(a, b): # pylint: disable=C0103,C0111
             return cmp(a.split('.'), b.split('.'))
 
         osgvers = list(self.get_osgvers())
         if osgvers:
-            return sorted(osgvers, cmp=cmp_version)[-1]
+            return sorted(osgvers, cmp=_cmp_version)[-1]
         else:
             return None
 
     def get_osgvers(self):
-        """Returns the available OSG versions (e.g. 3.1, 3.2, etc.)"""
+        """Return the available OSG major versions (e.g. 3.1, 3.2) as a set"""
         osgvers = set()
         for tag in self.tags:
             match_obj = self.osg_testing_pattern.search(tag)
@@ -151,16 +127,9 @@ class RouteDiscovery(object):
                 osgvers.add(match_obj.group(1))
         return osgvers
 
-    def get_testing_tags_osgvers_dvers(self):
-        testing_tags_osgvers_dvers = []
-        for tag in self.tags:
-            match = self.osg_testing_pattern.search(tag)
-            if match:
-                testing_tags_osgvers_dvers.append((tag,) + match.group(1, 2))
-        return testing_tags_osgvers_dvers
-
     def get_dvers_for_route(self, route):
-        """ TODO """
+        """Return the dvers (as a list of strings) a route supports
+        'route' is given as a (from_tag_hint, to_tag_hint) pair."""
         tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[0]))
         available_tags = [x for x in self.tags if tag_pattern.match(x)]
         dver_pattern = re.compile(r'(el\d+)')
@@ -172,10 +141,20 @@ class RouteDiscovery(object):
         return available_dvers
 
     def get_dvers_for_route_by_name(self, route_name):
+        """Return the dvers (as a list of strings) a route supports
+        'route' is a key in the 'routes' dictionary.
+
+        """
         route = self.routes[route_name]
         return self.get_dvers_for_route(route)
 
     def get_valid_osg_routes(self):
+        """Return a dictionary of the valid OSG routes.
+        This includes the versioned routes (e.g. '3.1-testing') as well
+        as short aliases for them (e.g. 'testing' for the newest versioned
+        route for testing).
+
+        """
         valid_osg_routes = {}
         valid_osg_routes.update(self.get_valid_versioned_osg_routes())
         valid_osg_routes.update(self.get_osg_route_aliases(valid_osg_routes))
@@ -183,8 +162,12 @@ class RouteDiscovery(object):
         return valid_osg_routes
 
     def get_valid_versioned_osg_routes(self):
+        """Return a dict of versioned OSG routes (e.g. '3.1-testing').
+        All routes are validated (see validate_route_for_dver()).
+
+        """
         valid_versioned_osg_routes = {}
-        for testing_tag, osgver, dver in self.get_testing_tags_osgvers_dvers():
+        for osgver, dver in self._get_osgvers_dvers():
             devel_tag_hint = "osg-%s-%%s-development" % (osgver)
             contrib_tag_hint = "osg-%s-%%s-contrib" % (osgver)
             testing_tag_hint = "osg-%s-%%s-testing" % (osgver)
@@ -198,8 +181,40 @@ class RouteDiscovery(object):
 
         return valid_versioned_osg_routes
 
+    def _get_osgvers_dvers(self):
+        """Helper function for get_valid_versioned_osg_routes
+        Finds osg-testing tags (i.e. tags matching osg_testing_pattern) and
+        returns a list of tuples containing:
+        - the OSG major version as a string (e.g. '3.1')
+        - the dver of the tag as a string (e.g. 'el5')
+
+        """
+        osgvers_dvers = []
+        for tag in self.tags:
+            match = self.osg_testing_pattern.search(tag)
+            if match:
+                osgvers_dvers.append((tag,) + match.group(1, 2))
+        return osgvers_dvers
+
     def get_osg_route_aliases(self, valid_osg_routes):
-        # TODO misses the case where there is a 3.2-testing but only a 3.1-contrib
+        """Get a dict of route aliases for the OSG routes.
+        The aliases are made using the following rules:
+        If no versioned OSG routes exist, then 'testing', 'upcoming', and
+        'contrib' are aliases to the old testing, upcoming and contrib routes
+        (e.g. ('%s-osg-development', '%s-osg-testing')), which are defined in
+        STATIC_ROUTES.
+        If versioned OSG routes exist, then 'testing' and 'contrib' are aliases
+        to the newest testing and contrib routes (e.g.
+        'osg-3.2-%s-development') and 'upcoming' is an alias for the
+        'new-upcoming' route in STATIC_ROUTES.
+
+        Assumes routes have been validated.
+        Currently does not correctly handle the edge case where there aren't
+        both testing and contrib routes for the same osgver.
+        For example, if there is a '3.2-testing' but only a '3.1-contrib',
+        then it only creates the 'testing' alias.
+
+        """
         osg_route_aliases = {}
         highest_osgver = self.get_highest_osgver()
         if not highest_osgver or not valid_osg_routes:
@@ -215,7 +230,11 @@ class RouteDiscovery(object):
         return osg_route_aliases
 
     def validate_route_for_dver(self, route, dver):
-        """ TODO """
+        """Check that both sides of a route exist for the given dver.
+        'route' is a (from_tag_hint, to_tag_hint) pair. 'dver' is a string.
+        Returns nothing; raises YourTagsAreMessedUp if validation fails.
+
+        """
         errors = []
         for tag_hint in route:
             tag = tag_hint % dver
@@ -225,49 +244,45 @@ class RouteDiscovery(object):
             raise YourTagsAreMessedUp("Error validating route %s: %s" % (route, "; ".join(errors)))
 
     def validate_route_by_name_for_dver(self, route_name, dver):
+        """See validate_route_for_dver; 'route_name' is a key in the 'routes' dict."""
         route = self.routes[route_name]
         return self.validate_route_for_dver(route, dver)
 
 
-
-def split_dver(build):
-    """Split out the dver from the NVR of 'build'.
-    For example, split_dver("foobar-1-1.osg.el5") returns
-    ("foobar-1-1.osg", "el5")
-    Return the empty string for the dver if it's not in the NVR.
+class Promoter(object):
+    """For promoting sets of packages.
+    Usage is to add packages or builds via add_promotion and then call
+    do_promotions to actually promote.
+    do_promotions should not be called twice.
 
     """
-    pattern = re.compile(r".(el\d+)$")
-    nvr_no_dver = pattern.sub("", build)
-    dver = pattern.search(build)
-    return (nvr_no_dver, dver and dver.group(1) or "")
-
-def trim_dver(build):
-    return split_dver(build)[0]
-
-
-
-
-class Promoter(object):
     def __init__(self, kojihelper, route, dvers):
+        """kojihelper is an instance of KojiHelper. route is a
+        (from_tag_hint, to_tag_hint pair). dvers is a list of strings.
+        """
         self.tag_pkg_args = {}
         self.rejects = []
-        self.from_tag_base, self.to_tag_base = route
+        self.from_tag_hint, self.to_tag_hint = route
         self.dvers = dvers
         self.kojihelper = kojihelper
 
 
     def add_promotion(self, pkg_or_build, ignore_rejects=False):
-        """See if 'pkg_or_build' can be promoted, add the build to
-        self.tag_pkg_args for each tag it should be added to.
+        """Run get_builds() for 'pkg_or_build', using from_tag_hint as the
+        tag hint.
+        Returns nothing; builds to promote are added to tag_pkg_args, which
+        is a dict keyed by tag (actual tag, not tag hint) of koji builds that
+        should be added to that tag.
+        If pkg_or_build is rejected (see get_builds()), that pkg_or_build is
+        added to the 'rejects' list.
 
         """
-        builds = self.get_builds(self.from_tag_base, self.dvers, pkg_or_build, ignore_rejects=ignore_rejects)
+        builds = self.get_builds(self.from_tag_hint, self.dvers, pkg_or_build, ignore_rejects=ignore_rejects)
         if not builds and not ignore_rejects:
             self.rejects.append(pkg_or_build)
         else:
             for dver in builds:
-                to_tag = self.get_valid_tag_for_dver(self.to_tag_base, dver)
+                to_tag = self.get_valid_tag_for_dver(self.to_tag_hint, dver)
 
                 build = builds[dver]
                 self.tag_pkg_args.setdefault(to_tag, [])
@@ -283,7 +298,7 @@ class Promoter(object):
 
         Will not attempt to tag builds already in the destination tag.
 
-        Return a list of builds successfully promoted.
+        Return builds successfully promoted.
 
         """
         printf("--- Tagging builds")
@@ -320,6 +335,8 @@ class Promoter(object):
         If pkg_or_build is a package, then it gets the latest version of the
         package in tag_hint % dver.
         If pkg_or_build is a build, then it uses that specific version.
+        Note that latest is defined as the build most recently tagged into
+        tag_hint % dver, NOT the newest version.
 
         If ignore_rejects is False, then it can reject packages if
         either of the following apply:
@@ -375,7 +392,14 @@ class Promoter(object):
         return builds
 
     def get_valid_tag_for_dver(self, tag_hint, dver):
-        """ TODO """
+        """Find tag_hint % dver in koji's list of tags (as queried via
+        kojihelper). Return the tag if found; raise YourTagsAreMessedUp if
+        not.
+
+        RouteDiscovery should have already validated the route being used, but
+        this is an extra layer of protection to catch mistakes.
+
+        """
         tag = tag_hint % dver
         if not self.kojihelper.get_first_tag('exact', tag):
             raise YourTagsAreMessedUp("Can't find tag %s in koji" % tag)
@@ -383,6 +407,14 @@ class Promoter(object):
 
 
     def watch_builds(self, tasks):
+        """Helper for do_promotions(). Watch builds being promoted and return
+        successful ones.
+        'tasks' is a dict of koji tasks keyed by the koji task ID
+        Promoted builds are returned as a dict keyed by 'build_no_dver' (i.e.
+        the NVR with the dver chopped off), containing dicts keyed by dver,
+        containing the build (i.e. NVR as string).
+
+        """
         self.kojihelper.watch_tasks(list(tasks.keys()))
 
         promoted_builds = {}
@@ -395,48 +427,8 @@ class Promoter(object):
                 printf("* Error promoting build %s", build)
 
 
-
-def write_twiki(kojihelper, builds, dvers, output_format, no_date=False):
-    out = sys.stdout
-    if output_format == 'relnote':
-        write_releasenotes(kojihelper, out, builds, dvers)
-    elif output_format == 'old' or output_format == 'prerelnote':
-        write_prereleasenotes(kojihelper, out, builds, dvers, no_date)
-    elif output_format == 'none':
-        pass
-    else:
-        # Sanity check, but optparse should have caught this already
-        print >> sys.stderr, "Unknown output format!"
-
-def write_releasenotes(kojihelper, out, builds, dvers):
-    # Release note format
-    #    * build-1-2.osg.el5
-    #    * build-1-2.osg.el6
-    for dver in dvers:
-        for build_no_dver in sorted(builds):
-            build = builds[build_no_dver][dver]
-            out.write("   * [[%s][%s]]\n" % (kojihelper.get_build_uri(build), build))
-
-def write_prereleasenotes(kojihelper, out, builds, dvers, no_date):
-    # PreReleaseNotes format
-    # | DATE | build-1-2.osg (el5+el6) |
-    first = True
-    for build_no_dver in sorted(builds):
-        if first and not no_date:
-            out.write("| %s |" % time.strftime("%Y-%m-%d"))
-            first = False
-        else:
-            out.write("||")
-        out.write(" %(build_no_dver)s " % locals())
-        build_links = []
-        for dver in sorted(builds[build_no_dver]):
-            build = builds[build_no_dver][dver]
-            build_links.append("[[%s][%s]]" % (kojihelper.get_build_uri(build), dver))
-        out.write("(" + "+".join(build_links) + ")")
-        out.write(" |\n")
-
-
 class KojiHelper(kojiinter.KojiLibInter):
+    """Extra utility functions for dealing with Koji"""
     tags_cache = []
     tagged_builds_cache = {}
     tagged_packages_cache = {}
@@ -464,9 +456,15 @@ class KojiHelper(kojiinter.KojiLibInter):
     def get_build_uri(self, build):
         """Return a URI to the kojiweb page of the build with the given NVR"""
         buildinfo = self.kojisession.getBuild(build)
-        return ("https://koji-hub.batlab.org/koji/buildinfo?buildID=%d" % int(buildinfo['id']))
+        return ("%s/koji/buildinfo?buildID=%d" % (constants.HTTPS_KOJI_HUB, int(buildinfo['id'])))
 
     def get_first_tag(self, match, terms):
+        """Return the first koji tag matching 'terms'.
+        'match' is a string which is interpreted as a regex (if 'terms' is
+        'regex') or an exact query (if 'terms' is 'exact').
+        Return None if no such tag(s) are found.
+
+        """
         try:
             return self.search_names(terms, 'tag', match)[0]
         except IndexError:
@@ -517,6 +515,119 @@ class KojiHelper(kojiinter.KojiLibInter):
             self.watch_tasks([self.regen_repo(tag)])
 
 
+
+#
+# TWiki writing
+#
+def write_twiki(kojihelper, builds, dvers, output_format, no_date=False, out=None):
+    """Print TWiki code for the promoted builds, with links.
+    'kojihelper' is an instance of KojiHelper.
+    'builds' is data structure returned by Promoter.do_promotions.
+    'dvers' is a list of strings.
+    'output_format' can be:
+        'relnote', in which case a bulleted list grouped by dver is printed.
+        'old' or 'prerelnote', in which case table rows are printed, one for
+        each set of builds, with an optional date (if no_date is False).
+    'out' is an output stream (such as a file). sys.stdout is used if not
+    specified.
+    """
+    out = out or sys.stdout
+    if output_format == 'relnote':
+        write_releasenotes(kojihelper, out, builds, dvers)
+    elif output_format == 'old' or output_format == 'prerelnote':
+        write_prereleasenotes(kojihelper, out, builds, dvers, no_date)
+    elif output_format == 'none':
+        pass
+    else:
+        # Sanity check, but optparse should have caught this already
+        print >> sys.stderr, "Unknown output format!"
+
+def write_releasenotes(kojihelper, out, builds, dvers):
+    """Write twiki output in release note format. See write_twiki()"""
+    # Release note format
+    #    * build-1-2.osg.el5
+    #    * build-1-2.osg.el6
+    for dver in dvers:
+        for build_no_dver in sorted(builds):
+            build = builds[build_no_dver][dver]
+            out.write("   * [[%s][%s]]\n" % (kojihelper.get_build_uri(build), build))
+
+def write_prereleasenotes(kojihelper, out, builds, dvers, no_date):
+    """Write twiki output in PreReleaseNotes format. See write_twiki()"""
+    # PreReleaseNotes format
+    # | DATE | build-1-2.osg (el5+el6) |
+    first = True
+    for build_no_dver in sorted(builds):
+        if first and not no_date:
+            out.write("| %s |" % time.strftime("%Y-%m-%d"))
+            first = False
+        else:
+            out.write("||")
+        out.write(" %(build_no_dver)s " % locals())
+        build_links = []
+        for dver in sorted(builds[build_no_dver]):
+            build = builds[build_no_dver][dver]
+            build_links.append("[[%s][%s]]" % (kojihelper.get_build_uri(build), dver))
+        out.write("(" + "+".join(build_links) + ")")
+        out.write(" |\n")
+
+
+#
+# Command line and main
+#
+
+def parse_cmdline_args(valid_routes, argv):
+    """Return a tuple of (options, positional args)"""
+    # TODO: el5 and el6 arguments are currently hardcoded -- this means that
+    # el7 support will require code changes despite the autodetection code in
+    # RouteDiscovery.
+    parser = OptionParser("""
+    %prog -r|--route ROUTE [options] <packages or builds>
+    """)
+    parser.add_option("-r", "--route", default="testing", type='choice', choices=valid_routes.keys(),
+                      help="The promotion route to use. Valid routes are: " + ", ".join(valid_routes.keys()))
+    parser.add_option("-n", "--dry-run", action="store_true", default=False,
+                      help="Do not promote, just show what would be done")
+    parser.add_option("--el5-only", action="store_false", dest='el6', default=True,
+                      help="Promote only el5 packages.")
+    parser.add_option("--el6-only", action="store_false", dest='el5', default=True,
+                      help="Promote only el6 packages.")
+    parser.add_option("--ignore-rejects", dest="ignore_rejects", action="store_true", default=False,
+                      help="Ignore rejections due to version mismatch between dvers or missing package for one dver")
+    of_choices = ['old', 'prerelnote', 'relnote', 'none']
+    parser.add_option("--output-format", "--of", default='old', type='choice', choices=of_choices,
+                      help="Valid output formats are: " + ", ".join(of_choices))
+    parser.add_option("--no-date", "--nodate", default=False, action="store_true",
+                      help="Do not add the date to the wiki code")
+    parser.add_option("--regen", default=False, action="store_true",
+                      help="Regenerate repo(s) afterward")
+    parser.add_option("-y", "--assume-yes", action="store_true", default=False,
+                      help="Do not prompt before promotion")
+
+    options, args = parser.parse_args(argv[1:])
+
+    if not options.el5 and not options.el6:
+        parser.error("Can't specify both --el5-only and --el6-only")
+
+    # optparse doesn't do 'append_const' in python 2.4 so simulate it
+    options.dvers = []
+    if options.el5: options.dvers.append('el5')
+    if options.el6: options.dvers.append('el6')
+
+    if options.route:
+        # User is allowed to specify the shortest unambiguous prefix of a route
+        matching_routes = [x for x in valid_routes.keys() if x.startswith(options.route)]
+        if len(matching_routes) > 1:
+            parser.error("Ambiguous route. Matching routes are: " + ", ".join(matching_routes))
+        elif not matching_routes:
+            parser.error("Invalid route. Valid routes are: " + ", ".join(valid_routes.keys()))
+        else:
+            options.route = matching_routes[0]
+    else:
+        parser.error("Missing required parameter '--route'")
+
+    return (options, args)
+
 def main(argv=None):
     if argv is None:
         argv = sys.argv
@@ -548,8 +659,8 @@ def main(argv=None):
     printf("Examining the following packages/builds:\n%s", "\n".join(["'" + x + "'" for x in pkgs_or_builds]))
 
     promoter = Promoter(kojihelper, valid_routes[route], dvers)
-    for x in pkgs_or_builds:
-        promoter.add_promotion(x, options.ignore_rejects)
+    for pkgb in pkgs_or_builds:
+        promoter.add_promotion(pkgb, options.ignore_rejects)
 
     if promoter.rejects:
         print "Rejected package or builds:\n" + "\n".join(promoter.rejects)
