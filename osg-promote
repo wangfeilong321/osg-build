@@ -400,37 +400,42 @@ def watch_builds(tasks):
 
 def write_twiki(builds):
     out = sys.stdout
-    first = True
     if options.output_format == 'relnote':
-        # Release note format
-        #    * build-1-2.osg.el5
-        #    * build-1-2.osg.el6
-        for dver in dvers:
-            for build_no_dver in sorted(builds):
-                build = builds[build_no_dver][dver]
-                out.write("   * [[%s][%s]]\n" % (kojihelper.get_build_uri(build), build))
+        write_releasenotes(out, builds, dvers)
     elif options.output_format == 'old' or options.output_format == 'prerelnote':
-        # Old (current) format, used in PreReleaseNotes
-        # | DATE | build-1-2.osg (el5+el6) |
-        for build_no_dver in sorted(builds):
-            if first and not options.no_date:
-                out.write("| %s |" % time.strftime("%Y-%m-%d"))
-                first = False
-            else:
-                out.write("||")
-            out.write(" %(build_no_dver)s " % locals())
-            build_links = []
-            for dver in sorted(builds[build_no_dver]):
-                build = builds[build_no_dver][dver]
-                build_links.append("[[%s][%s]]" % (kojihelper.get_build_uri(build), dver))
-            out.write("(" + "+".join(build_links) + ")")
-            out.write(" |\n")
+        write_prereleasenotes(out, builds, dvers)
     elif options.output_format == 'none':
         pass
     else:
         # Sanity check, but optparse should have caught this already
         print >> sys.stderr, "Unknown output format!"
 
+def write_releasenotes(out, builds, dvers):
+    # Release note format
+    #    * build-1-2.osg.el5
+    #    * build-1-2.osg.el6
+    for dver in dvers:
+        for build_no_dver in sorted(builds):
+            build = builds[build_no_dver][dver]
+            out.write("   * [[%s][%s]]\n" % (kojihelper.get_build_uri(build), build))
+
+def write_prereleasenotes(out, builds, dvers):
+    # PreReleaseNotes format
+    # | DATE | build-1-2.osg (el5+el6) |
+    first = True
+    for build_no_dver in sorted(builds):
+        if first and not options.no_date:
+            out.write("| %s |" % time.strftime("%Y-%m-%d"))
+            first = False
+        else:
+            out.write("||")
+        out.write(" %(build_no_dver)s " % locals())
+        build_links = []
+        for dver in sorted(builds[build_no_dver]):
+            build = builds[build_no_dver][dver]
+            build_links.append("[[%s][%s]]" % (kojihelper.get_build_uri(build), dver))
+        out.write("(" + "+".join(build_links) + ")")
+        out.write(" |\n")
 
 class KojiHelper(kojiinter.KojiLibInter):
     tags_cache = []
