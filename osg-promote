@@ -610,7 +610,10 @@ def write_prereleasenotes(kojihelper, out, builds, no_date):
 def parse_cmdline_args(all_dvers, valid_routes, argv):
     """Return a tuple of (options, positional args)"""
     helpstring = "%prog -r|--route ROUTE [options] <packages or builds>"
-    helpstring += "\n\nValid routes are:\n - " + "\n - ".join(sorted(valid_routes.keys()))
+    helpstring += "\n\nValid routes are:\n"
+    for route in sorted(valid_routes.keys()):
+        helpstring += " - %-14s: %-30s -> %s\n" % (
+            route, valid_routes[route][0] % '*', valid_routes[route][1] % '*')
     parser = OptionParser(helpstring)
 
     parser.add_option("-r", "--route", default="testing", type='choice', choices=valid_routes.keys(),
