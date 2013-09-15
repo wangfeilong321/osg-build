@@ -521,7 +521,7 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv
 
-    kojihelper = KojiHelper(True)
+    kojihelper = KojiHelper(False)
 
     route_discovery = RouteDiscovery(kojihelper.get_tags())
     VALID_ROUTES = route_discovery.valid_routes
@@ -531,7 +531,8 @@ def main(argv=None):
     dvers = options.dvers
     route = options.route
 
-    #kojihelper = KojiHelper(do_login=not options.dry_run)
+    if not options.dry_run:
+        kojihelper.login_to_koji()
 
     printf("Promoting from %s to %s for dvers: %s", VALID_ROUTES[route][0], VALID_ROUTES[route][1], ", ".join(dvers))
     printf("Examining the following packages/builds:\n%s", "\n".join(["'" + x + "'" for x in pkgs_or_builds]))

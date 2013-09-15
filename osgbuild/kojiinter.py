@@ -423,13 +423,17 @@ class KojiLibInter(object):
         print "Initializing koji session to", self.server
         self.kojisession = kojilib.ClientSession(self.server, {'user': self.user})
         if login and not self.dry_run:
-            print "Logging in to koji as", self.user
-            try:
-                self.kojisession.ssl_login(self.cert, self.ca, self.serverca)
-            except Exception, err:
-                raise KojiError("Couldn't do ssl_login: " + str(err))
-            if not self.kojisession.logged_in:
-                raise KojiError("Couldn't log in to koji for unknown reason")
+            self.login_to_koji()
+
+
+    def login_to_koji(self):
+        print "Logging in to koji as", self.user
+        try:
+            self.kojisession.ssl_login(self.cert, self.ca, self.serverca)
+        except Exception, err:
+            raise KojiError("Couldn't do ssl_login: " + str(err))
+        if not self.kojisession.logged_in:
+            raise KojiError("Couldn't log in to koji for unknown reason")
 
 
     @koji_error_wrap('adding package')
