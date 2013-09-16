@@ -285,7 +285,16 @@ class KojiShellInter(object):
         """Submit an SRPM build"""
         return self.build(srpm, target, scratch, **kwargs)
 
-        
+    def get_targets(self):
+        """Get a list of the names of targets (as strings) from koji"""
+        out, err = utils.sbacktick(self.koji_cmd + ["list-targets", "--quiet"])
+        if err:
+            raise KojiError("koji list-targets failed with exit code " + str(err))
+        lines = out.split("\n")
+        target_names = [re.split(r"\s+", x)[0] for x in lines]
+        return target_names
+
+
     def mock_config(self, arch, tag, dist, outpath, name):
         """Request a mock config from koji-hub"""
         mock_config_subcmd = ["mock-config",
@@ -476,6 +485,12 @@ class KojiLibInter(object):
                           scratch=scratch,
                           **kwargs)
 
+    @koji_error_wrap('getting targets')
+    def get_targets(self):
+        """Get a list of the names of targets (as strings) from koji"""
+        targets = self.kojisession.getBuildTargets(None)
+        target_names = sorted([x['name'] for x in targets])
+        return target_names
 
     @koji_error_wrap('generating mock config')
     def mock_config(self, arch, tag, dist, outpath, name):
