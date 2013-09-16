@@ -393,7 +393,8 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         "--repo", action="callback",
         callback=parser_targetopts_callback,
         type="string", dest="repo",
-        help="Specify a set of repos to build to (osg, upcoming, hcc, uscms).")
+        help="Specify a set of repos to build to (osg, upcoming, hcc, uscms, "
+        "old-osg, old-upcoming, osg-3.1 (or just 3.1))")
     for grp in [prebuild_group, rpmbuild_mock_group, mock_group, koji_group]:
         parser.add_option_group(grp)
 
@@ -472,12 +473,20 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
     elif opt_str == '--repo':
         target_hint = ''
         tag_hint = ''
-        if value == 'upcoming':
+        osg_match = re.match(r'(?:osg-)?(\d+\.\d+)', value)
+        if value == 'old-upcoming':
             target_hint = 'el%s-osg-upcoming'
             tag_hint = 'el%s-osg'
-        elif value == 'osg': target_hint = 'el%s-osg'
+        elif value == 'upcoming':
+            target_hint = 'osg-upcoming-el%s'
+            tag_hint = 'osg-el%s'
+        elif value == 'osg': target_hint = 'osg-el%s'
+        elif value == 'old-osg': target_hint = 'el%s-osg'
         elif value == 'hcc': target_hint = 'hcc-el%s'
         elif value == 'uscms': target_hint = 'uscms-el%s'
+        elif osg_match:
+            target_hint = 'osg-%s-el%%s' % (osg_match.group(1))
+            tag_hint = 'osg-el%s'
         for dver in DVERS:
             targetopts_by_dver[dver]['koji_target'] = target_hint % dver
             if not tag_hint:
