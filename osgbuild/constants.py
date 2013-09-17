@@ -90,14 +90,14 @@ ALLBUILD_ALLOWED_OPTNAMES = [
 DEFAULT_BUILDOPTS_BY_DVER = {
     '5': {
         'distro_tag': 'osg.el5',
-        'koji_tag': 'el5-osg',
-        'koji_target': 'el5-osg',
+        'koji_tag': 'osg-el5',
+        'koji_target': 'osg-el5',
         'redhat_release': '5',
     },
     '6': {
         'distro_tag': 'osg.el6',
-        'koji_tag': 'el6-osg',
-        'koji_target': 'el6-osg',
+        'koji_tag': 'osg-el6',
+        'koji_target': 'osg-el6',
         'redhat_release': '6',
     }
 }

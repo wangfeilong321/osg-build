@@ -306,7 +306,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
     mock_group.add_option(
         "--mock-config-from-koji",
         help="Use a mock config based on a koji buildroot (build tag, "
-        "such as el5-osg-build).")
+        "such as osg-el5-build).")
 
     koji_group = OptionGroup(parser,
                              "koji task options")
@@ -331,7 +331,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         callback=parser_targetopts_callback,
         type="string",
         help="The koji target to use for building. Default: "
-        "el5-osg or el6-osg depending on --redhat-release")
+        "osg-el5 or osg-el6 depending on --redhat-release")
     koji_group.add_option(
         "--koji-tag",
         action="callback",
@@ -339,7 +339,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         type="string",
         help="The koji tag to add packages to. The special value TARGET "
         "uses the destination tag defined in the koji target. Default: "
-        "el5-osg or el6-osg depending on --redhat-release")
+        "osg-el5 or osg-el6 depending on --redhat-release")
     koji_group.add_option(
         "--koji-target-and-tag", "--ktt",
         action="callback",
