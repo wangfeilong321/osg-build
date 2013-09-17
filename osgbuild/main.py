@@ -469,7 +469,7 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
             targetopts_by_dver[dver]['koji_tag'] = 'TARGET'
     elif opt_str == '--upcoming': # Also HACK
         for dver in DVERS:
-            targetopts_by_dver[dver]['koji_target'] = 'el%s-osg-upcoming' % dver
+            targetopts_by_dver[dver]['koji_target'] = 'osg-upcoming-el%s' % dver
     elif opt_str == '--repo':
         target_hint = ''
         tag_hint = ''
