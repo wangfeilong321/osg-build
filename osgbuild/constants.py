@@ -41,6 +41,11 @@ KOJI_RESTRICTED_TARGETS = {
     r'^(el\d+)-osg-upcoming$'              : 'upcoming',  #old upcoming
     r'^osg-upcoming-(el\d+)$'              : 'upcoming',
     r'^osg-(?P<osgver>\d+\.\d+)-(el\d+)$'  : 'versioned'}
+GIT_RESTRICTED_BRANCHES = {
+    r'^(\w*/)?master$'                     : 'main',
+    r'^(\w*/)?upcoming$'                   : 'upcoming',
+    r'^(\w*/)?osg-(?P<osgver>\d+\.\d+)$'   : 'versioned'}
+
 CSL_KOJI_DIR = "/p/vdt/workspace/koji-1.6.0"
 
 OSG_REMOTE = 'https://github.com/opensciencegrid/Software-Redhat.git'
