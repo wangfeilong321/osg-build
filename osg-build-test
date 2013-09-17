@@ -384,11 +384,11 @@ class TestKoji(XTestCase):
 
     def test_verify_correct_branch(self):
         try:
-            output = backtick_osg_build(self.kdr_lib + ["--upcoming", "--dry-run", opj(SVN_ROOT, SVN_TRUNK_PATH, "koji")])
+            output = backtick_osg_build(self.kdr_lib + ["--upcoming", "--dry-run", opj(SVN_ROOT, 'native/redhat/trunk/koji')])
         except CalledProcessError, err:
             out_list = err.output.split("\n")
             self.assertTrue(
-                regex_in_list(r"Error: Incorrect branch for koji build", out_list),
+                regex_in_list(r"Forbidden to build from .+ branch into .+ target", out_list),
                 "did not detect attempt to build for wrong branch (wrong error message)")
             return
         self.fail("did not detect attempt to build for wrong branch (no error message)") 

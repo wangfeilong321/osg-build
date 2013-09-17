@@ -2,7 +2,7 @@
 import re
 import os
 
-from osgbuild.constants import SVN_ROOT, SVN_TRUNK_PATH, SVN_UPCOMING_PATH
+from osgbuild.constants import SVN_ROOT, SVN_REDHAT_PATH, SVN_RESTRICTED_BRANCHES, KOJI_RESTRICTED_TARGETS
 from osgbuild.error import Error, SVNError, UsageError
 from osgbuild import utils
 
@@ -79,33 +79,89 @@ def verify_package_info(package_info):
             return True
     return False
 
-        
+
+#
+# Branch checking
+#
+# We need to forbid building from certain SVN branches into certain Koji
+# targets. This is implemented by having two dicts mapping regexp patterns to
+# names, one containing the restricted SVN branches and one containing the
+# restricted Koji targets.
+#
+# We're permissive by default: if neither the branch nor the target match any
+# of the regexps in their respective dicts, the build is allowed. On the other
+# hand, if both are restricted then the branch name has to match the target
+# name.
+#
+
+def is_restricted_branch(branch):
+    """branch is an SVN branch such as 'trunk' or 'branches/osg-3.1'.
+    Assumes no extra characters on either side (no 'native/redhat/trunk' or
+    'trunk/gums')
+
+    """
+    for pattern in SVN_RESTRICTED_BRANCHES:
+        if re.search(pattern, branch):
+            return True
+    return False
+
+def is_restricted_target(target):
+    """target is a koji target such as 'el5-osg' or 'osg-3.1-el5'.
+    Assumes no extra characters on either side.
+
+    """
+    for pattern in KOJI_RESTRICTED_TARGETS:
+        if re.search(pattern, target):
+            return True
+    return False
+
+def restricted_branch_matches_target(branch, target):
+    """Return True if the pattern that matches 'branch' is associated with the
+    same name (e.g. 'main', 'upcoming', 'versioned') as the pattern that
+    matches 'target'; False otherwise.
+    Special case: if the name is 'versioned' (e.g. we're building from
+    branches/osg-3.1) then the versions also have to match.
+
+    Precondition: is_restricted_branch(branch) and is_restricted_target(target)
+    are True.
+
+    """
+    for (branch_pattern, branch_name) in SVN_RESTRICTED_BRANCHES.iteritems():
+        branch_match = re.search(branch_pattern, branch)
+        for (target_pattern, target_name) in KOJI_RESTRICTED_TARGETS.iteritems():
+            target_match = re.search(target_pattern, target)
+
+            if branch_match and target_match and branch_name == target_name:
+                if branch_name != 'versioned':
+                    return True
+                elif branch_match.group('osgver') == target_match.group('osgver'):
+                    return True
+
+    return False
+
 def verify_correct_branch(package_dir, buildopts):
-    """Check that the user is not trying to build from trunk into upcoming, or
-    vice versa.
+    """Check that the user is not trying to build with bad branch/target
+    combinations. For example, building from trunk into upcoming, or building
+    from osg-3.1 into osg-3.2.
 
     """
     package_info = get_package_info(package_dir)
     url = package_info['canon_url']
+    branch_match = re.search(SVN_REDHAT_PATH + r'/(trunk|branches/[^/]+)/', url)
+    if not branch_match:
+        # Building from a weird path (such as a tag). Be permissive -- koji will catch building from outside SVN
+        return
+    branch = branch_match.group(1)
+    if not is_restricted_branch(branch):
+        # Developer branch -- any target ok
+        return
     for dver in buildopts['enabled_dvers']:
-        if buildopts['targetopts_by_dver'][dver]['koji_target'].endswith('osg-upcoming'):
-            if re.search(SVN_TRUNK_PATH, url):
-                raise Error("""\
-Error: Incorrect branch for koji build
-Not allowed to build into the upcoming targets from
-trunk (SVN/%s)!  Either move the package dir into the
-upcoming area (SVN/%s) or a separate branch, or do not build
-it for the upcoming targets (i.e. do not pass the --upcoming,
-or the --koji-target el5-osg-upcoming or el6-osg-upcoming flags).""" % (SVN_TRUNK_PATH, SVN_UPCOMING_PATH))
-        else:
-            if re.search(SVN_UPCOMING_PATH, url):
-                raise Error("""\
-Error: Incorrect branch for koji build
-Only allowed to build packages from the upcoming area (SVN/%s)
-into the upcoming targets.  Either move the package dir
-into trunk (SVN/%s) or a separate branch, or pass the
---upcoming flag.""" % (SVN_UPCOMING_PATH, SVN_TRUNK_PATH))
-
+        target = buildopts['targetopts_by_dver'][dver]['koji_target']
+        if not is_restricted_target(target):
+            # Some custom target -- any branch ok
+            continue
+        if not restricted_branch_matches_target(branch, target):
+            raise SVNError("Forbidden to build from %s branch into %s target" % (branch, target))
 
 
 def get_package_info(package_dir, rev=None):

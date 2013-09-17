@@ -29,8 +29,18 @@ DATA_FILE_SEARCH_PATH = [sys.path[0],
                          DATA_DIR]
 
 SVN_ROOT = "https://vdt.cs.wisc.edu/svn"
-SVN_TRUNK_PATH = "native/redhat/trunk"
-SVN_UPCOMING_PATH = "native/redhat/branches/upcoming"
+SVN_REDHAT_PATH = "native/redhat/"
+
+SVN_RESTRICTED_BRANCHES = {
+    r'^trunk$'                             : 'main',
+    r'^branches/upcoming$'                 : 'upcoming',
+    r'^branches/osg-(?P<osgver>\d+\.\d+)$' : 'versioned'}
+KOJI_RESTRICTED_TARGETS = {
+    r'^(el\d+)-osg$'                       : 'main',      #old main
+    r'^osg-(el\d+)$'                       : 'main',
+    r'^(el\d+)-osg-upcoming$'              : 'upcoming',  #old upcoming
+    r'^osg-upcoming-(el\d+)$'              : 'upcoming',
+    r'^osg-(?P<osgver>\d+\.\d+)-(el\d+)$'  : 'versioned'}
 CSL_KOJI_DIR = "/p/vdt/workspace/koji-1.6.0"
 
 OSG_REMOTE = 'https://github.com/opensciencegrid/Software-Redhat.git'
