@@ -29,7 +29,7 @@ DATA_FILE_SEARCH_PATH = [sys.path[0],
                          DATA_DIR]
 
 SVN_ROOT = "https://vdt.cs.wisc.edu/svn"
-SVN_REDHAT_PATH = "native/redhat/"
+SVN_REDHAT_PATH = "/native/redhat"
 
 SVN_RESTRICTED_BRANCHES = {
     r'^trunk$'                             : 'main',
