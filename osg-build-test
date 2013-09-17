@@ -388,7 +388,7 @@ class TestKoji(XTestCase):
         except CalledProcessError, err:
             out_list = err.output.split("\n")
             self.assertTrue(
-                regex_in_list(r"Forbidden to build from .+ branch into .+ target", out_list),
+                regex_in_list(r".*Forbidden to build from .+ branch into .+ target", out_list),
                 "did not detect attempt to build for wrong branch (wrong error message)")
             return
         self.fail("did not detect attempt to build for wrong branch (no error message)")
