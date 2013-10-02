@@ -21,8 +21,8 @@ def is_git(package_dir):
         command = ["git", "status", "--porcelain"]
         try:
             err = utils.sbacktick(command, clocale=True, err2out=True)[1]
-        except OSError, oe:
-            if oe.errno != errno.ENOENT:
+        except OSError, ose:
+            if ose.errno != errno.ENOENT:
                 raise
             err = 1
         if err:
@@ -60,7 +60,7 @@ def get_known_remote(package_dir):
         if info[2] != '(fetch)':
             continue
         if info[1] in constants.KNOWN_GIT_REMOTES:
-            return info[0]
+            return info[0], info[1]
     raise GitError("OSG remote not found for directory %s; are remotes configurated correctly?" % package_dir)
 
 
@@ -81,7 +81,8 @@ def get_fetch_url(package_dir, remote):
         if info[0] == remote:
             return constants.GIT_REMOTE_MAPS.setdefault(info[1], info[1])
 
-    raise GitError("Remote URL not found for remote %s in directory %s; are remotes configurated correctly?" % (remote, package_dir))
+    raise GitError("Remote URL not found for remote %s in directory %s; are remotes " \
+        "configured correctly?" % (remote, package_dir))
 
 def get_current_branch_remote(package_dir):
     """Return the configured remote for the current branch."""
@@ -251,7 +252,7 @@ def verify_git_svn_commit(package_dir):
 def verify_correct_remote(package_dir):
     """Verify the current branch remote is one of the known remotes."""
     remote = get_current_branch_remote(package_dir)
-    known_remote = get_known_remote(package_dir)
+    known_remote = get_known_remote(package_dir)[0]
     if remote != known_remote:
         raise GitError("Remote %s for directory %s is not an officially known remote." % (remote, package_dir))
 
@@ -261,26 +262,47 @@ def verify_correct_branch(package_dir, buildopts):
     vice versa.
     """
     branch = get_branch(package_dir)
-    remote = get_known_remote(package_dir)
+    remote = get_known_remote(package_dir)[1]
 
     verify_correct_remote(package_dir)
 
-    # We only have branching rules for OSG repos
-    if remote != constants.OSG_REMOTE:
+    # We only have branching rules for OSG and HCC repos
+    if remote not in constants.KNOWN_GIT_REMOTES:
         return
 
-    verify_git_svn_commit(package_dir)
+    if remote == constants.OSG_REMOTE:
+        verify_git_svn_commit(package_dir)
 
     for dver in buildopts['enabled_dvers']:
         target = buildopts['targetopts_by_dver'][dver]['koji_target']
-        if target.endswith('osg-upcoming'):
+        if target.startswith("hcc-"):
+            if branch.find("master") < 0:
+                raise Error("""\
+Error: Incorrect branch for koji build
+Only allowed to build into the HCC repo from the
+master branch!  You must switch branches.""")
+            if remote != constants.HCC_REMOTE and remote != constants.HCC_AUTH_REMOTE:
+                raise Error("""\
+Error: You must build into the HCC repo when building from
+a HCC git checkout.  You must switch git repos or build targets.""")
+        elif target.endswith('osg-upcoming'):
+            if remote != constants.OSG_REMOTE:
+                raise Error("""\
+Error: You may not build into the OSG repo when building from
+a non-OSG target.  You must switch git repos or build targets.
+Try adding "--repo=hcc" to the command line.""")
             if branch.find("master") >= 0:
                 raise Error("""\
 Error: Incorrect branch for koji build
 Not allowed to build into the upcoming targets from
 master branch!  You must switch branches or build targets.""")
         elif target.find("osg") >= 0:
-            if branch.find("upcoming"):
+            if remote != constants.OSG_REMOTE:
+                raise Error("""\
+Error: You may not build into the OSG repo when building from
+a non-OSG target.  You must switch git repos or build targets.
+Try adding "--repo=hcc" to the command line.""")
+            if branch.find("upcoming") >= 0:
                 raise Error("""\
 Error: Incorrect branch for koji build
 Only allowed to build packages from the upcoming branch
@@ -298,7 +320,7 @@ def koji(package_dir, koji_obj, buildopts):
     if not buildopts.get('scratch'):
         koji_obj.add_pkg(package_name)
 
-    remote = get_fetch_url(package_dir, get_known_remote(package_dir))
+    remote = get_fetch_url(package_dir, get_known_remote(package_dir)[0])
     top_dir = os.path.split(os.path.abspath(package_dir))[0]
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"),
                "log", "-1", "--pretty=format:%H"]
