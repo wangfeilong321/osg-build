@@ -49,11 +49,14 @@ GIT_RESTRICTED_BRANCHES = {
 CSL_KOJI_DIR = "/p/vdt/workspace/koji-1.6.0"
 
 OSG_REMOTE = 'https://github.com/opensciencegrid/Software-Redhat.git'
-KNOWN_GIT_REMOTES = ['https://github.com/unlhcc/hcc-packaging.git',
-                     'git@github.com:unlhcc/hcc-packaging.git',
+HCC_REMOTE = 'https://github.com/unlhcc/hcc-packaging.git'
+HCC_AUTH_REMOTE = 'git@github.com:unlhcc/hcc-packaging.git'
+
+KNOWN_GIT_REMOTES = [HCC_REMOTE,
+                     HCC_AUTH_REMOTE,
                      OSG_REMOTE]
 # Map the authenticated URL to an anonymous checkout URL.
-GIT_REMOTE_MAPS = {'git@github.com:unlhcc/hcc-packaging.git': 'https://github.com/unlhcc/hcc-packaging.git'}
+GIT_REMOTE_MAPS = {HCC_AUTH_REMOTE: HCC_REMOTE}
 
 DEFAULT_BUILDOPTS_COMMON = {
     'autoclean': True,
