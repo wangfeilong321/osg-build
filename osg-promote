@@ -446,6 +446,8 @@ class Promoter(object):
             else:
                 printf("* Error promoting build %s", build)
 
+        return promoted_builds
+
 
 # don't care if it has too many methods: pylint: disable=R0904
 class KojiHelper(kojiinter.KojiLibInter):
