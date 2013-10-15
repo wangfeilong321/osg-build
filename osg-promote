@@ -641,6 +641,10 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
         parser.add_option("--no-%s" % dver, "--no%s" % dver, action="store_true", default=False,
                           help="Do not promote %s builds" % dver)
 
+    if len(argv) < 2:
+        parser.print_help()
+        sys.exit(2)
+
     options, args = parser.parse_args(argv[1:])
 
     options.dvers = _get_wanted_dvers(all_dvers, parser, options)
