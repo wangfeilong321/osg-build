@@ -73,6 +73,7 @@ DEFAULT_BUILDOPTS_COMMON = {
     'no_wait': False,
     'redhat_releases': None,
     'regen_repos': False,
+    'repo': 'osg',
     'scratch': False,
     'vcs': None,
     'target_arch': None,
@@ -93,16 +94,27 @@ ALLBUILD_ALLOWED_OPTNAMES = [
 DEFAULT_BUILDOPTS_BY_DVER = {
     '5': {
         'distro_tag': 'osg.el5',
-        'koji_tag': 'osg-el5',
-        'koji_target': 'osg-el5',
+        'koji_tag': None,
+        'koji_target': None,
         'redhat_release': '5',
+        'repo': 'osg',
     },
     '6': {
         'distro_tag': 'osg.el6',
-        'koji_tag': 'osg-el6',
-        'koji_target': 'osg-el6',
+        'koji_tag': None,
+        'koji_target': None,
         'redhat_release': '6',
+        'repo': 'osg',
     }
+}
+
+REPO_HINTS_STATIC = {
+    'old-osg': {'target': 'el%s-osg', 'tag': 'el%s-osg'},
+    'new-osg': {'target': 'osg-el%s', 'tag': 'osg-el%s'},
+    'old-upcoming': {'target': 'el%s-osg-upcoming', 'tag': 'el%s-osg'},
+    'new-upcoming': {'target': 'osg-upcoming-el%s', 'tag': 'osg-el%s'},
+    'hcc': {'target': 'hcc-el%s', 'tag': 'hcc-el%s'},
+    'uscms': {'target': 'uscms-el%s', 'tag': 'uscms-el%s'}
 }
 
 DVERS = DEFAULT_BUILDOPTS_BY_DVER.keys()

@@ -27,7 +27,7 @@ import tempfile
 import ConfigParser
 
 from osgbuild.constants import *
-from osgbuild.error import UsageError
+from osgbuild.error import UsageError, KojiError
 from osgbuild import kojiinter
 from osgbuild import mock
 from osgbuild import srpm
@@ -61,6 +61,12 @@ def main(argv):
     if task == 'allbuild':
         log.warning("The 'allbuild' task is deprecated. The 'koji' task now "
                     "builds on all supported distro versions by default.")
+        buildopts['enabled_dvers'] = DVERS
+    if task in ['koji', 'mock', 'allbuild']:
+        for dver in buildopts['enabled_dvers']:
+            targetopts = buildopts['targetopts_by_dver'][dver]
+            targetopts['koji_target'] = targetopts['koji_target'] or target_for_repo_hint(targetopts['repo'], dver)
+            targetopts['koji_tag'] = targetopts['koji_tag'] or tag_for_repo_hint(targetopts['repo'], dver)
     # checks
     if task == 'allbuild' or (task == 'koji' and buildopts['vcs']):
         # verify working dirs
@@ -95,11 +101,13 @@ def main(argv):
         if task == 'allbuild':
             # allbuild is special--we ignore most options and use
             # a slightly different set of defaults.
-            for dver in DVERS:
+            for dver in buildopts['enabled_dvers']:
                 dver_buildopts = buildopts.copy()
                 dver_buildopts.update(DEFAULT_BUILDOPTS_BY_DVER[dver])
                 for key in ALLBUILD_ALLOWED_OPTNAMES:
                     dver_buildopts[key] = buildopts[key]
+                dver_buildopts['koji_target'] = dver_buildopts['koji_target'] or target_for_repo_hint(dver_buildopts['repo'], dver)
+                dver_buildopts['koji_tag'] = dver_buildopts['koji_tag'] or tag_for_repo_hint(dver_buildopts['repo'], dver)
 
                 vcs.koji(pkg, kojiinter.KojiInter(dver_buildopts), dver_buildopts)
 
@@ -190,16 +198,20 @@ def init(argv):
 # end of init()
 
 
+__koji_targets_cache = None
 def valid_koji_targets():
     """Return a list of valid koji targets (to be used for building up the list
     of values for the --repo argument).
     """
-    # HACK
-    opts = ALLBUILD_BUILDOPTS.copy()
-    opts['dry_run'] = True
-    readonly_koji_obj = kojiinter.KojiInter(opts)
-    # TODO does not catch KojiError
-    return readonly_koji_obj.get_targets()
+    global __koji_targets_cache
+    if not __koji_targets_cache:
+        # HACK
+        try:
+            koji_obj = kojiinter.KojiShellInter(dry_run=True)
+            __koji_targets_cache = koji_obj.get_targets()
+        except KojiError:
+            pass
+    return __koji_targets_cache
 
 def valid_dvers(targets):
     """Return a list of valid dvers as derived from a list of koji targets.
@@ -207,57 +219,52 @@ def valid_dvers(targets):
     # TODO this will replace the DVERS constant and will let us add el7 support
     # without changes to osg-build
 
-    # we want the 'el5' in 'el5-osg' or 'osg-el5' or 'osg-el5-topic'
-    # basically, make sure the el5 is a separate word
-    dver_pattern = re.compile(r'(?:^|-)(el\d+)(?:-|$)')
     dvers = set()
     for target in targets:
-        dver_match = dver_pattern.search(target)
-        if dver_match:
-            dvers.add(dver_match.group(1))
+        dver = get_dver_from_string(target)
+        if dver:
+            dvers.add(dver)
     return sorted(dvers)
 
+__repo_hints_cache = None
 def repo_hints(targets):
-    # FIXME bad doc
-    """Return a dict of --repo arguments and the target and tag hints associated with them."""
-    hints = {}
-    try:
-        # TODO justify this
-        dver = valid_dvers(targets)[0]
-    except IndexError:
-        raise Error("No valid dvers found")
-    # TODO turn this into a table
-    if dver+"-osg" in targets:
-        hints['old-osg'] = {'target': 'el%s-osg'}
-    if "osg-"+dver in targets:
-        hints['new-osg'] = {'target': 'osg-el%s'}
-    if dver+"-osg-upcoming" in targets:
-        hints['old-upcoming'] = {'target': 'el%s-osg-upcoming', 'tag': 'el%s-osg'}
-    if "osg-"+dver+"-upcoming" in targets:
-        hints['new-upcoming'] = {'target': 'osg-upcoming-el%s', 'tag': 'osg-el%s'}
-    if "hcc-"+dver in targets:
-        hints['hcc'] = {'target': 'hcc-el%s'}
-    if "uscms-"+dver in targets:
-        hints['uscms'] = {'target': 'uscms-el%s'}
-    for target in targets:
-        osg_match = re.match(r'(?:osg-)?(\d+\.\d+)', target)
-        if osg_match:
-            osgver = osg_match.group(1)
-            hints['osg-%s' % osgver] = {'target': 'osg-%s-el%%s' % osgver, 'tag': 'osg-el%s'}
-    if hints.has_key('new-osg'):
-        hints['default'] = hints['osg'] = hints['new-osg']
-    else:
-        hints['default'] = hints['osg'] = hints['old-osg']
-    if hints.has_key('new-upcoming'):
-        hints['upcoming'] = hints['new-upcoming']
-    else:
-        hints['upcoming'] = hints['old-upcoming']
+    """Return the valid arguments for --repo and the target and tag hints
+    associated with them.  Most of the repo_hints are already specified in
+    REPO_HINTS_STATIC, but we need to determine the following:
 
-    for hint in hints.itervalues():
-        if not hint.has_key('tag'):
-            hint['tag'] = hint['target']
+    1. Which 'versioned' osg targets exist (e.g. osg-3.1-el5)?
+    2. Do the new-style osg targets exist (e.g. osg-el5)? If so, --repo=osg
+       should be the same as --repo=new-osg. If not, --repo=osg should be the
+       same as --repo=old-osg.
+    3. Similarly, do the new-style osg-upcoming targets exist (e.g.
+       osg-upcoming-el5)? If so, --repo=upcoming should be the same as
+       --repo=new-upcoming. If not, --repo=upcoming should be the same as
+       --repo=old-upcoming.
 
-    return hints
+    'targets' is a list of koji targets and can be obtained from
+    valid_koji_targets().
+
+    """
+    global __repo_hints_cache
+
+    if not __repo_hints_cache:
+        __repo_hints_cache = REPO_HINTS_STATIC.copy()
+        if targets:
+            for target in targets:
+                osg_match = re.match(r'osg-(\d+\.\d+)-el\d+', target)
+                if osg_match:
+                    osgver = osg_match.group(1)
+                    __repo_hints_cache[osgver] = __repo_hints_cache['osg-%s' % osgver] = {'target': 'osg-%s-el%%s' % osgver, 'tag': 'osg-el%s'}
+                if re.match(r'osg-el\d+', target):
+                    __repo_hints_cache['osg'] = __repo_hints_cache['new-osg']
+                if re.match(r'osg-upcoming-el\d+', target):
+                    __repo_hints_cache['upcoming'] = __repo_hints_cache['new-upcoming']
+        if 'osg' not in __repo_hints_cache:
+            __repo_hints_cache['osg'] = __repo_hints_cache['old-osg']
+        if 'osg-upcoming' not in __repo_hints_cache:
+            __repo_hints_cache['upcoming'] = __repo_hints_cache['old-upcoming']
+
+    return __repo_hints_cache
 
 
 def set_loglevel(level_str):
@@ -481,15 +488,21 @@ rpmbuild     Build using rpmbuild(8) on the local machine
 
 
 def get_dver_from_string(s):
-    # TODO use this for valid_dvers
     """Get the EL major version from a string containing it.
     Return None if not found."""
+    if not s:
+        return None
     match = re.search(r'\bel(\d+)\b', s)
     if match is not None:
         return match.group(1)
     else:
         return None
 
+def target_for_repo_hint(repo_hint, dver):
+    return repo_hints(valid_koji_targets())[repo_hint]['target'] % dver
+
+def tag_for_repo_hint(repo_hint, dver):
+    return repo_hints(valid_koji_targets())[repo_hint]['tag'] % dver
 
 def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
     """Handle options in the 'targetopts_by_dver' set, such as --koji-tag,
@@ -528,8 +541,6 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
         parser.values.enabled_dvers = set()
     enabled_dvers = parser.values.enabled_dvers
 
-    # TODO cache these
-    hints = repo_hints(valid_koji_targets())
     dver = None
     if value is None:
         value = ''
@@ -548,11 +559,13 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
             targetopts_by_dver[dver]['koji_tag'] = 'TARGET'
     elif opt_str == '--upcoming':
         for dver in DVERS:
-            targetopts_by_dver[dver]['koji_target'] = hints['upcoming']['target'] % dver
-            targetopts_by_dver[dver]['koji_tag'] = hints['upcoming']['tag'] % dver
+            targetopts_by_dver[dver]['repo'] = 'upcoming'
+            targetopts_by_dver[dver]['koji_target'] = target_for_repo_hint('upcoming', dver)
+            targetopts_by_dver[dver]['koji_tag'] = tag_for_repo_hint('upcoming', dver)
     elif opt_str == '--repo':
-        targetopts_by_dver[dver]['koji_target'] = hints[value]['target'] % dver
-        targetopts_by_dver[dver]['koji_tag'] = hints[value]['tag'] % dver
+        targetopts_by_dver[dver]['repo'] = value
+        targetopts_by_dver[dver]['koji_target'] = target_for_repo_hint(value, dver)
+        targetopts_by_dver[dver]['koji_tag'] = tag_for_repo_hint(value, dver)
     else:
         dver = get_dver_from_string(value)
 
