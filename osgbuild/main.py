@@ -563,9 +563,10 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
             targetopts_by_dver[dver]['koji_target'] = target_for_repo_hint('upcoming', dver)
             targetopts_by_dver[dver]['koji_tag'] = tag_for_repo_hint('upcoming', dver)
     elif opt_str == '--repo':
-        targetopts_by_dver[dver]['repo'] = value
-        targetopts_by_dver[dver]['koji_target'] = target_for_repo_hint(value, dver)
-        targetopts_by_dver[dver]['koji_tag'] = tag_for_repo_hint(value, dver)
+        for dver in DVERS:
+            targetopts_by_dver[dver]['repo'] = value
+            targetopts_by_dver[dver]['koji_target'] = target_for_repo_hint(value, dver)
+            targetopts_by_dver[dver]['koji_tag'] = tag_for_repo_hint(value, dver)
     else:
         dver = get_dver_from_string(value)
 
