@@ -546,7 +546,7 @@ class KojiLibInter(object):
             raise KojiError("Couldn't get info for target %s" % target)
         return (info[0]['build_tag_name'], info[0]['dest_tag_name'])
 
-    
+
     def regen_repo(self, tag):
         """Regenerate a repo"""
         if not self.dry_run:

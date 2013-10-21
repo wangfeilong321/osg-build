@@ -328,7 +328,7 @@ def koji(package_dir, koji_obj, buildopts):
     if err:
         raise GitError("Exit code %d getting git hash for directory %s. Output:\n%s" % (err, package_dir, out))
     rev = out.strip()
- 
+
     return koji_obj.build_git(remote,
                               rev,
                               package_name)

@@ -23,7 +23,7 @@ def make_mock_config_from_template(arch, cfg_path, dist, rhel):
         basearch = 'i386'
     else:
         basearch = arch
-    
+
     cfg_abspath = os.path.abspath(cfg_path)
     cfg_name = re.sub(r'\.cfg$', '', os.path.basename(cfg_abspath))
 
@@ -34,7 +34,7 @@ def make_mock_config_from_template(arch, cfg_path, dist, rhel):
                                                         BASEARCH=basearch,
                                                         DIST=dist,
                                                         RHEL=rhel))
-    
+
     return cfg_abspath
 
 
@@ -87,7 +87,7 @@ You might need to log out and log in for the changes to take effect""")
     def _init_get_cfg_path(self):
         """Find the appropriate configuration to use for mock based on 
         options and make a Mock object with it.
-        
+
         """
         distro_tag = self.buildopts['distro_tag']
         mock_config = self.buildopts['mock_config']
@@ -126,9 +126,9 @@ You might need to log out and log in for the changes to take effect""")
                 # translate it to what mock wants.
                 if not mock_config.endswith(".cfg"):
                     given_cfg_path = mock_config + ".cfg"
-                else:   
+                else:
                     given_cfg_path = mock_config
-                    
+
                 if given_cfg_path.startswith('/'):
                     # Absolute path
                     cfg_path = given_cfg_path
@@ -171,7 +171,7 @@ You might need to log out and log in for the changes to take effect""")
         ret = utils.unchecked_call(rebuild_cmd)
         if ret:
             raise MockError('Mock build failed (command was: ' + ' '.join(rebuild_cmd) + ')')
-        
+
         # TODO: Parse the mock logs/output instead of using glob.
         rpms = [x for x in glob(os.path.join(resultdir, "*.rpm")) if not fnmatch(x, "*.src.rpm")]
 
@@ -183,4 +183,3 @@ You might need to log out and log in for the changes to take effect""")
         """Clean the mock chroot"""
         utils.checked_call(self.mock_cmd + ["clean"])
 # end of Mock
-        

@@ -192,7 +192,7 @@ def find_files(filename, paths=None):
         if os.path.isfile(j):
             matches += [j]
     return matches
-            
+
 
 def super_unpack(*compressed_files):
     '''Extracts compressed files, calling the appropriate expansion
@@ -228,7 +228,7 @@ def safe_makedirs(directory, mode=0777):
     """
     if not os.path.isdir(directory):
         os.makedirs(directory, mode)
-        
+
 
 def ask(question, choices):
     """Prompt user for a choice from a list. Return the choice."""
@@ -364,7 +364,7 @@ except ImportError:
                 # ^ the 'next' builtin is not in 2.4
         except ZipExhausted:
             pass
-        
+
 
 def print_table(columns_by_header):
     """Print a dict of lists in a table, with each list being a column"""

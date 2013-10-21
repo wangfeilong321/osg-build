@@ -56,8 +56,8 @@ def main(argv):
     buildopts, package_dirs, task = init(argv)
     koji_obj = None
     mock_obj = None
-
     vcs = None
+
     if task == 'allbuild':
         log.warning("The 'allbuild' task is deprecated. The 'koji' task now "
                     "builds on all supported distro versions by default.")
@@ -87,7 +87,7 @@ def main(argv):
     if (task == 'koji' and not buildopts['scratch'] and not buildopts['vcs']):
         raise UsageError("Non-scratch Koji builds must be from SVN!")
 
-    # main loop 
+    # main loop
     # HACK
     task_ids = []
     task_ids_by_results_dir = dict()
@@ -494,7 +494,7 @@ def get_dver_from_string(s):
 def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
     """Handle options in the 'targetopts_by_dver' set, such as --koji-tag,
     --redhat-release, etc.
-    
+
     targetopts_by_dver is a dict keyed by redhat release (aka 'distro
     version' or 'dver' for short) The values of targetopts_by_dver are dicts
     containing the options to use for building with that dver. For example,
@@ -571,7 +571,7 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
         if not verify_release_in_targetopts_by_dver(targetopts_by_dver[dver]):
             raise OptionValueError('Inconsistent redhat release in parameter %s: %s' % (opt_str, value))
 # end of parser_targetopts_callback()
-    
+
 
 
 def get_task(args):
@@ -720,7 +720,7 @@ def read_config_file(given_cfg_file=None):
     else:
         return {}
 
-            
+
 def print_version_and_exit():
     """Print version and exit"""
     # '@'+'VERSION'+'@' is so sed will leave it alone during 'make dist'
@@ -745,7 +745,7 @@ def all(iterable):
         if not element:
             return False
     return True
-    
+
 
 
 def verify_release_in_targetopts_by_dver(targetopts_by_dver):
