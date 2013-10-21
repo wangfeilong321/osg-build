@@ -30,7 +30,6 @@ class KojiTagsAreMessedUp(Exception):
 
     This can happen if one half of a route does not exist for a given dver
     (e.g. osg-3.1-el5-development exists but not osg-3.1-el5-testing).
-    It can also happen if a route does not exist for any dvers.
     """
 
 #
@@ -113,12 +112,15 @@ class RouteDiscovery(object):
 
         """
         dvers_for_routes = {}
+        to_remove = []
         for route_name, route in routes.iteritems():
             dvers = self.get_dvers_for_route(route)
             if not dvers:
-                raise KojiTagsAreMessedUp("Route %s has no valid dvers" % route_name)
+                to_remove.append(route_name)
             else:
                 dvers_for_routes[route_name] = dvers
+        for route_name in to_remove:
+            del routes[route_name]
         return dvers_for_routes
 
     def get_routes(self):
@@ -638,6 +640,10 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
                           help="Promote only %s builds" % dver)
         parser.add_option("--no-%s" % dver, "--no%s" % dver, action="store_true", default=False,
                           help="Do not promote %s builds" % dver)
+
+    if len(argv) < 2:
+        parser.print_help()
+        sys.exit(2)
 
     options, args = parser.parse_args(argv[1:])
 

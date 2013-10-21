@@ -59,7 +59,7 @@ except Error, err:
     print >> sys.stderr, str(err)
     print >> sys.stderr, "-" * 79
     log.debug("Full traceback follows:")
-    log.debug(err.traceback)
+    log.debug(traceback.format_exc())
     sys.exit(4)
 except Exception, err:
     print >> sys.stderr, "-" * 79
