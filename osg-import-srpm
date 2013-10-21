@@ -71,7 +71,7 @@ def make_svn_tree(srpm, url, extract_spec=False, diff_spec=False, provider=None)
     $name/osg/*.spec        - the spec file as extracted from the srpm
                               (if extract_spec is True)
     $name/upstream/*.source - the location of the srpm under the upstream cache
-    $name/README            - where the srpm was downloaded from.
+                              as well as a comment describing where it's from
 
     """
     name, version = srpm_nvr(srpm)[0:2]
@@ -95,11 +95,10 @@ def make_svn_tree(srpm, url, extract_spec=False, diff_spec=False, provider=None)
         provider_name = provider
 
     source_filename = opj(upstream_dir, provider_name+".srpm.source")
-    readme_filename = opj(name, "README")
 
+    source_contents = "# Downloaded from '%s'\n%s" % (url, opj(name, version, srpm))
     source_contents = opj(name, version, srpm) + "\n"
-    readme_contents = "Source downloaded from '%s'\n" % url
-    
+
     if exists(source_filename):
         print "Source file exists. Saving as %s.old" % source_filename
         move(source_filename, source_filename + ".old")
@@ -110,20 +109,6 @@ def make_svn_tree(srpm, url, extract_spec=False, diff_spec=False, provider=None)
     if len(glob.glob(opj(upstream_dir, "*.source"))) > 1:
         print "More than one .source file found in upstream dir."
         print "Examine them to make sure there aren't duplicates."
-    
-    if exists(readme_filename):
-        print ("Readme file exists. Examine %s.old to determine " +
-               "if it has information you want to keep") % readme_filename
-        unchecked_call(["cat", readme_filename])
-        move(readme_filename, readme_filename + ".old")
-        unslurp(
-            readme_filename,
-            readme_contents)
-    else:
-        unslurp(
-            readme_filename,
-            readme_contents)
-        checked_call(["svn", "add", readme_filename])
 
     osg_dir = opj(name, "osg")
     if diff_spec:
