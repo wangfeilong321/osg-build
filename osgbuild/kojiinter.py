@@ -52,7 +52,7 @@ except ImportError:
     HAVE_KOJILIB = False
 except AttributeError:
     HAVE_KOJILIB = False
-    
+
 
 def get_koji_cmd(use_osg_koji):
     """Get the command used to call koji."""
@@ -132,7 +132,7 @@ class KojiInter(object):
 Unable to determine your Koji login. Either pass --kojilogin or verify that
 'openssl x509 -in %s -noout -subject'
 gives you a subject with a CN""" % KOJI_CLIENT_CERT)
-    
+
         if KojiInter.backend is None:
             if HAVE_KOJILIB and opts.get('koji_backend') != 'shell':
                 log.debug("KojiInter Using KojiLib backend")
@@ -170,7 +170,7 @@ gives you a subject with a CN""" % KOJI_CLIENT_CERT)
                                             regen_repos=self.regen_repos,
                                             no_wait=self.no_wait)
 
-    
+
     def build_svn(self, url, rev):
         """Submit an SVN build"""
         return KojiInter.backend.build("svn+" + url + "#" + rev,
@@ -180,7 +180,7 @@ gives you a subject with a CN""" % KOJI_CLIENT_CERT)
                                        no_wait=self.no_wait)
 
     def build_git(self, remote, rev, path):
-        """Submit an SVN build"""
+        """Submit a GIT build"""
         print remote
         return KojiInter.backend.build("git+" + remote + "?" + path + "#" + rev,
                                        self.target,
@@ -225,7 +225,7 @@ class KojiShellInter(object):
                 utils.checked_call(cmd)
             else:
                 print " ".join(cmd)
-    
+
     def get_build_and_dest_tags(self, target):
         """Return the build and destination tags for the current target."""
         line = utils.checked_backtick(self.koji_cmd + ["-q", "list-targets", "--name", target])
@@ -280,12 +280,21 @@ class KojiShellInter(object):
             if err2:
                 raise KojiError("koji regen-repo failed with exit code " + str(err2))
 
-        
+
     def build_srpm(self, srpm, target, scratch=False, **kwargs):
         """Submit an SRPM build"""
         return self.build(srpm, target, scratch, **kwargs)
 
-        
+    def get_targets(self):
+        """Get a list of the names of targets (as strings) from koji"""
+        out, err = utils.sbacktick(self.koji_cmd + ["list-targets", "--quiet"])
+        if err:
+            raise KojiError("koji list-targets failed with exit code " + str(err))
+        lines = out.split("\n")
+        target_names = [re.split(r"\s+", x)[0] for x in lines]
+        return target_names
+
+
     def mock_config(self, arch, tag, dist, outpath, name):
         """Request a mock config from koji-hub"""
         mock_config_subcmd = ["mock-config",
@@ -296,7 +305,7 @@ class KojiShellInter(object):
                               "-o",
                               outpath,
                               name]
-        
+
         err = utils.unchecked_call(self.koji_cmd + mock_config_subcmd)
         if err:
             raise KojiError("koji mock-config failed with exit code " + str(err))
@@ -314,7 +323,7 @@ class KojiShellInter(object):
         if err:
             raise KojiError("koji search failed with exit code " + str(err))
         return out.split("\n")
-            
+
 
 
     def tag_build(self, tag, build, force=False):
@@ -351,7 +360,7 @@ def koji_error_wrap(description):
         @koji_error_wrap('adding package')
         def add_pkg(self, ...):
             ...
-    
+
     """
     # Due to the way descriptors work in python, it is necessary to have three levels of functions here.
     # This:
@@ -452,7 +461,7 @@ class KojiLibInter(object):
                 return self.kojisession.packageListAdd(tag, package, owner)
             else:
                 log.info("kojisession.packageListAdd(%r, %r, %r)", tag, package, owner)
-                
+
 
 
     @koji_error_wrap('building')
@@ -476,6 +485,12 @@ class KojiLibInter(object):
                           scratch=scratch,
                           **kwargs)
 
+    @koji_error_wrap('getting targets')
+    def get_targets(self):
+        """Get a list of the names of targets (as strings) from koji"""
+        targets = self.kojisession.getBuildTargets(None)
+        target_names = sorted([x['name'] for x in targets])
+        return target_names
 
     @koji_error_wrap('generating mock config')
     def mock_config(self, arch, tag, dist, outpath, name):
@@ -531,7 +546,7 @@ class KojiLibInter(object):
             raise KojiError("Couldn't get info for target %s" % target)
         return (info[0]['build_tag_name'], info[0]['dest_tag_name'])
 
-    
+
     def regen_repo(self, tag):
         """Regenerate a repo"""
         if not self.dry_run:
@@ -582,12 +597,6 @@ class KojiLibInter(object):
                     except (TypeError, AttributeError):
                         # TODO More useful error message
                         log.warning("Unable to download files for task %d", task_id)
-
-
-
-            
-        
-        
 
 
 # end of class KojiLibInter

@@ -29,8 +29,23 @@ DATA_FILE_SEARCH_PATH = [sys.path[0],
                          DATA_DIR]
 
 SVN_ROOT = "https://vdt.cs.wisc.edu/svn"
-SVN_TRUNK_PATH = "native/redhat/trunk"
-SVN_UPCOMING_PATH = "native/redhat/branches/upcoming"
+SVN_REDHAT_PATH = "/native/redhat"
+
+SVN_RESTRICTED_BRANCHES = {
+    r'^trunk$'                             : 'main',
+    r'^branches/upcoming$'                 : 'upcoming',
+    r'^branches/osg-(?P<osgver>\d+\.\d+)$' : 'versioned'}
+KOJI_RESTRICTED_TARGETS = {
+    r'^(el\d+)-osg$'                       : 'main',      #old main
+    r'^osg-(el\d+)$'                       : 'main',
+    r'^(el\d+)-osg-upcoming$'              : 'upcoming',  #old upcoming
+    r'^osg-upcoming-(el\d+)$'              : 'upcoming',
+    r'^osg-(?P<osgver>\d+\.\d+)-(el\d+)$'  : 'versioned'}
+GIT_RESTRICTED_BRANCHES = {
+    r'^(\w*/)?master$'                     : 'main',
+    r'^(\w*/)?upcoming$'                   : 'upcoming',
+    r'^(\w*/)?osg-(?P<osgver>\d+\.\d+)$'   : 'versioned'}
+
 CSL_KOJI_DIR = "/p/vdt/workspace/koji-1.6.0"
 
 OSG_REMOTE = 'https://github.com/opensciencegrid/Software-Redhat.git'
@@ -58,6 +73,7 @@ DEFAULT_BUILDOPTS_COMMON = {
     'no_wait': False,
     'redhat_releases': None,
     'regen_repos': False,
+    'repo': 'osg',
     'scratch': False,
     'vcs': None,
     'target_arch': None,
@@ -78,16 +94,27 @@ ALLBUILD_ALLOWED_OPTNAMES = [
 DEFAULT_BUILDOPTS_BY_DVER = {
     '5': {
         'distro_tag': 'osg.el5',
-        'koji_tag': 'el5-osg',
-        'koji_target': 'el5-osg',
+        'koji_tag': None,
+        'koji_target': None,
         'redhat_release': '5',
+        'repo': 'osg',
     },
     '6': {
         'distro_tag': 'osg.el6',
-        'koji_tag': 'el6-osg',
-        'koji_target': 'el6-osg',
+        'koji_tag': None,
+        'koji_target': None,
         'redhat_release': '6',
+        'repo': 'osg',
     }
+}
+
+REPO_HINTS_STATIC = {
+    'old-osg': {'target': 'el%s-osg', 'tag': 'el%s-osg'},
+    'new-osg': {'target': 'osg-el%s', 'tag': 'osg-el%s'},
+    'old-upcoming': {'target': 'el%s-osg-upcoming', 'tag': 'el%s-osg'},
+    'new-upcoming': {'target': 'osg-upcoming-el%s', 'tag': 'osg-el%s'},
+    'hcc': {'target': 'hcc-el%s', 'tag': 'hcc-el%s'},
+    'uscms': {'target': 'uscms-el%s', 'tag': 'uscms-el%s'}
 }
 
 DVERS = DEFAULT_BUILDOPTS_BY_DVER.keys()

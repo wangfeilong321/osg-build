@@ -62,6 +62,8 @@ release: dist
 	mv -f $(NAME_VERSION).tar.gz $(DESTDIR)/$(NAME)/$(VERSION)/
 	rm -rf $(NAME_VERSION)
 
+check:
+	pylint -E osg-build osg-build-test osg-promote osg-koji $(PYDIR)/*.py
 test:
 	pylint -E osg-build osg-build-test osg-promote osg-koji $(PYDIR)/*.py
 	python osg-build-test -v TestSuiteAll
@@ -74,3 +76,4 @@ lint:
 	-pylint --rcfile=pylintrc osg-build osg-build-test osg-promote osg-koji $(PYDIR)/*.py
 # ignore return code in above
 
+.PHONY: _default clean install dist afsdist release check test shorttest lint

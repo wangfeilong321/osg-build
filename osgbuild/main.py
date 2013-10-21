@@ -12,6 +12,12 @@ Wishlist:
 * Have unit tests for every chunk of code I change.
 """
 # pylint: disable=W0614,W0602,C0103
+
+
+# TODO Shouldn't need koji access for 'rpmbuild', but currently does since it
+# gets the values for the --repo arg -- which is only used for koji builds.
+# Make it so.
+# TODO In some places, a dver is 'el5', in others, just '5'. Fix that -- use el5.
 import logging
 from optparse import OptionGroup, OptionParser, OptionValueError
 import re
@@ -21,7 +27,7 @@ import tempfile
 import ConfigParser
 
 from osgbuild.constants import *
-from osgbuild.error import UsageError
+from osgbuild.error import UsageError, KojiError
 from osgbuild import kojiinter
 from osgbuild import mock
 from osgbuild import srpm
@@ -50,11 +56,17 @@ def main(argv):
     buildopts, package_dirs, task = init(argv)
     koji_obj = None
     mock_obj = None
-
     vcs = None
+
     if task == 'allbuild':
         log.warning("The 'allbuild' task is deprecated. The 'koji' task now "
                     "builds on all supported distro versions by default.")
+        buildopts['enabled_dvers'] = DVERS
+    if task in ['koji', 'mock', 'allbuild']:
+        for dver in buildopts['enabled_dvers']:
+            targetopts = buildopts['targetopts_by_dver'][dver]
+            targetopts['koji_target'] = targetopts['koji_target'] or target_for_repo_hint(targetopts['repo'], dver)
+            targetopts['koji_tag'] = targetopts['koji_tag'] or tag_for_repo_hint(targetopts['repo'], dver)
     # checks
     if task == 'allbuild' or (task == 'koji' and buildopts['vcs']):
         # verify working dirs
@@ -81,7 +93,7 @@ def main(argv):
     if (task == 'koji' and not buildopts['scratch'] and not buildopts['vcs']):
         raise UsageError("Non-scratch Koji builds must be from SVN!")
 
-    # main loop 
+    # main loop
     # HACK
     task_ids = []
     task_ids_by_results_dir = dict()
@@ -89,11 +101,13 @@ def main(argv):
         if task == 'allbuild':
             # allbuild is special--we ignore most options and use
             # a slightly different set of defaults.
-            for dver in DVERS:
+            for dver in buildopts['enabled_dvers']:
                 dver_buildopts = buildopts.copy()
                 dver_buildopts.update(DEFAULT_BUILDOPTS_BY_DVER[dver])
                 for key in ALLBUILD_ALLOWED_OPTNAMES:
                     dver_buildopts[key] = buildopts[key]
+                dver_buildopts['koji_target'] = dver_buildopts['koji_target'] or target_for_repo_hint(dver_buildopts['repo'], dver)
+                dver_buildopts['koji_tag'] = dver_buildopts['koji_tag'] or tag_for_repo_hint(dver_buildopts['repo'], dver)
 
                 vcs.koji(pkg, kojiinter.KojiInter(dver_buildopts), dver_buildopts)
 
@@ -182,6 +196,75 @@ def init(argv):
 
     return (buildopts, package_dirs, task)
 # end of init()
+
+
+__koji_targets_cache = None
+def valid_koji_targets():
+    """Return a list of valid koji targets (to be used for building up the list
+    of values for the --repo argument).
+    """
+    global __koji_targets_cache
+    if not __koji_targets_cache:
+        # HACK
+        try:
+            koji_obj = kojiinter.KojiShellInter(dry_run=True)
+            __koji_targets_cache = koji_obj.get_targets()
+        except KojiError:
+            pass
+    return __koji_targets_cache
+
+def valid_dvers(targets):
+    """Return a list of valid dvers as derived from a list of koji targets.
+    targets: a list of koji targets returned by valid_koji_targets"""
+    # TODO this will replace the DVERS constant and will let us add el7 support
+    # without changes to osg-build
+
+    dvers = set()
+    for target in targets:
+        dver = get_dver_from_string(target)
+        if dver:
+            dvers.add(dver)
+    return sorted(dvers)
+
+__repo_hints_cache = None
+def repo_hints(targets):
+    """Return the valid arguments for --repo and the target and tag hints
+    associated with them.  Most of the repo_hints are already specified in
+    REPO_HINTS_STATIC, but we need to determine the following:
+
+    1. Which 'versioned' osg targets exist (e.g. osg-3.1-el5)?
+    2. Do the new-style osg targets exist (e.g. osg-el5)? If so, --repo=osg
+       should be the same as --repo=new-osg. If not, --repo=osg should be the
+       same as --repo=old-osg.
+    3. Similarly, do the new-style osg-upcoming targets exist (e.g.
+       osg-upcoming-el5)? If so, --repo=upcoming should be the same as
+       --repo=new-upcoming. If not, --repo=upcoming should be the same as
+       --repo=old-upcoming.
+
+    'targets' is a list of koji targets and can be obtained from
+    valid_koji_targets().
+
+    """
+    global __repo_hints_cache
+
+    if not __repo_hints_cache:
+        __repo_hints_cache = REPO_HINTS_STATIC.copy()
+        if targets:
+            for target in targets:
+                osg_match = re.match(r'osg-(\d+\.\d+)-el\d+', target)
+                if osg_match:
+                    osgver = osg_match.group(1)
+                    __repo_hints_cache[osgver] = __repo_hints_cache['osg-%s' % osgver] = {'target': 'osg-%s-el%%s' % osgver, 'tag': 'osg-el%s'}
+                if re.match(r'osg-el\d+', target):
+                    __repo_hints_cache['osg'] = __repo_hints_cache['new-osg']
+                if re.match(r'osg-upcoming-el\d+', target):
+                    __repo_hints_cache['upcoming'] = __repo_hints_cache['new-upcoming']
+        if 'osg' not in __repo_hints_cache:
+            __repo_hints_cache['osg'] = __repo_hints_cache['old-osg']
+        if 'osg-upcoming' not in __repo_hints_cache:
+            __repo_hints_cache['upcoming'] = __repo_hints_cache['old-upcoming']
+
+    return __repo_hints_cache
 
 
 def set_loglevel(level_str):
@@ -306,7 +389,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
     mock_group.add_option(
         "--mock-config-from-koji",
         help="Use a mock config based on a koji buildroot (build tag, "
-        "such as el5-osg-build).")
+        "such as osg-el5-build).")
 
     koji_group = OptionGroup(parser,
                              "koji task options")
@@ -331,7 +414,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         callback=parser_targetopts_callback,
         type="string",
         help="The koji target to use for building. Default: "
-        "el5-osg or el6-osg depending on --redhat-release")
+        "osg-el5 or osg-el6 depending on --redhat-release")
     koji_group.add_option(
         "--koji-tag",
         action="callback",
@@ -339,7 +422,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         type="string",
         help="The koji tag to add packages to. The special value TARGET "
         "uses the destination tag defined in the koji target. Default: "
-        "el5-osg or el6-osg depending on --redhat-release")
+        "osg-el5 or osg-el6 depending on --redhat-release")
     koji_group.add_option(
         "--koji-target-and-tag", "--ktt",
         action="callback",
@@ -393,7 +476,8 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         "--repo", action="callback",
         callback=parser_targetopts_callback,
         type="string", dest="repo",
-        help="Specify a set of repos to build to (osg, upcoming, hcc, uscms).")
+        help="Specify a set of repos to build to (osg, upcoming, hcc, uscms, "
+        "old-osg, old-upcoming, osg-3.1 (or just 3.1))")
     for grp in [prebuild_group, rpmbuild_mock_group, mock_group, koji_group]:
         parser.add_option_group(grp)
 
@@ -406,17 +490,24 @@ rpmbuild     Build using rpmbuild(8) on the local machine
 def get_dver_from_string(s):
     """Get the EL major version from a string containing it.
     Return None if not found."""
+    if not s:
+        return None
     match = re.search(r'\bel(\d+)\b', s)
     if match is not None:
         return match.group(1)
     else:
         return None
 
+def target_for_repo_hint(repo_hint, dver):
+    return repo_hints(valid_koji_targets())[repo_hint]['target'] % dver
+
+def tag_for_repo_hint(repo_hint, dver):
+    return repo_hints(valid_koji_targets())[repo_hint]['tag'] % dver
 
 def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
     """Handle options in the 'targetopts_by_dver' set, such as --koji-tag,
     --redhat-release, etc.
-    
+
     targetopts_by_dver is a dict keyed by redhat release (aka 'distro
     version' or 'dver' for short) The values of targetopts_by_dver are dicts
     containing the options to use for building with that dver. For example,
@@ -466,23 +557,16 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
     elif opt_name == 'koji_tag' and value == 'TARGET': # HACK
         for dver in targetopts_by_dver:
             targetopts_by_dver[dver]['koji_tag'] = 'TARGET'
-    elif opt_str == '--upcoming': # Also HACK
+    elif opt_str == '--upcoming':
         for dver in DVERS:
-            targetopts_by_dver[dver]['koji_target'] = 'el%s-osg-upcoming' % dver
+            targetopts_by_dver[dver]['repo'] = 'upcoming'
+            targetopts_by_dver[dver]['koji_target'] = target_for_repo_hint('upcoming', dver)
+            targetopts_by_dver[dver]['koji_tag'] = tag_for_repo_hint('upcoming', dver)
     elif opt_str == '--repo':
-        target_hint = ''
-        tag_hint = ''
-        if value == 'upcoming':
-            target_hint = 'el%s-osg-upcoming'
-            tag_hint = 'el%s-osg'
-        elif value == 'osg': target_hint = 'el%s-osg'
-        elif value == 'hcc': target_hint = 'hcc-el%s'
-        elif value == 'uscms': target_hint = 'uscms-el%s'
         for dver in DVERS:
-            targetopts_by_dver[dver]['koji_target'] = target_hint % dver
-            if not tag_hint:
-                tag_hint = target_hint
-            targetopts_by_dver[dver]['koji_tag'] = tag_hint % dver
+            targetopts_by_dver[dver]['repo'] = value
+            targetopts_by_dver[dver]['koji_target'] = target_for_repo_hint(value, dver)
+            targetopts_by_dver[dver]['koji_tag'] = tag_for_repo_hint(value, dver)
     else:
         dver = get_dver_from_string(value)
 
@@ -501,7 +585,7 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
         if not verify_release_in_targetopts_by_dver(targetopts_by_dver[dver]):
             raise OptionValueError('Inconsistent redhat release in parameter %s: %s' % (opt_str, value))
 # end of parser_targetopts_callback()
-    
+
 
 
 def get_task(args):
@@ -650,7 +734,7 @@ def read_config_file(given_cfg_file=None):
     else:
         return {}
 
-            
+
 def print_version_and_exit():
     """Print version and exit"""
     # '@'+'VERSION'+'@' is so sed will leave it alone during 'make dist'
@@ -675,7 +759,7 @@ def all(iterable):
         if not element:
             return False
     return True
-    
+
 
 
 def verify_release_in_targetopts_by_dver(targetopts_by_dver):
