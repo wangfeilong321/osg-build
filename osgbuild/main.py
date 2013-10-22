@@ -207,10 +207,10 @@ def valid_koji_targets():
     if not __koji_targets_cache:
         # HACK
         try:
-            koji_obj = kojiinter.KojiShellInter(dry_run=True)
+            koji_obj = kojiinter.KojiShellInter(dry_run=True, koji_wrapper=True)
             __koji_targets_cache = koji_obj.get_targets()
-        except KojiError:
-            pass
+        except KojiError, err:
+            log.warning(str(err))
     return __koji_targets_cache
 
 def valid_dvers(targets):
