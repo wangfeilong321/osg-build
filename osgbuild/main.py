@@ -261,7 +261,7 @@ def repo_hints(targets):
                     __repo_hints_cache['upcoming'] = __repo_hints_cache['new-upcoming']
         if 'osg' not in __repo_hints_cache:
             __repo_hints_cache['osg'] = __repo_hints_cache['old-osg']
-        if 'osg-upcoming' not in __repo_hints_cache:
+        if 'upcoming' not in __repo_hints_cache:
             __repo_hints_cache['upcoming'] = __repo_hints_cache['old-upcoming']
 
     return __repo_hints_cache
