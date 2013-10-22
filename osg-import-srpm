@@ -96,8 +96,7 @@ def make_svn_tree(srpm, url, extract_spec=False, diff_spec=False, provider=None)
 
     source_filename = opj(upstream_dir, provider_name+".srpm.source")
 
-    source_contents = "# Downloaded from '%s'\n%s" % (url, opj(name, version, srpm))
-    source_contents = opj(name, version, srpm) + "\n"
+    source_contents = "%s\n# Downloaded from '%s'\n" % (opj(name, version, srpm), url)
 
     if exists(source_filename):
         print "Source file exists. Saving as %s.old" % source_filename
