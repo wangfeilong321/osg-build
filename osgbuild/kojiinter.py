@@ -351,7 +351,7 @@ if HAVE_KOJILIB:
 
 
 def koji_error_wrap(description):
-    """Descriptor to wrap the body of a function in a try/except clause which
+    """Decorator to wrap the body of a function in a try/except clause which
     catches kojilib.GenericError and raises a KojiError with a more
     user-friendly error message including a description of what we were doing.
     Also catches kojilib.ServerOffline and raises a more specific error.
@@ -362,7 +362,7 @@ def koji_error_wrap(description):
             ...
 
     """
-    # Due to the way descriptors work in python, it is necessary to have three levels of functions here.
+    # Due to the way decorators work in python, it is necessary to have three levels of functions here.
     # This:
     #   @koji_error_wrap(description)
     #   def foo()...
