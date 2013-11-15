@@ -590,13 +590,15 @@ def write_twiki(kojihelper, promoter, builds, dvers, output_format, no_date=Fals
 def write_jira(kojihelper, promoter, out, builds, dvers):
     """Write input suitable for embedding into a JIRA ticket. See write_twiki()"""
     # Format
-    # Promoted to TAG: build-1.2.osg31.el5
+    # | TAG | build-1.2.osg31.el5 |
+    out.write("*Promotions*\n")
+    out.write("|| Tag || Build ||\n")
     for dver in dvers:
         for build_no_dver in sorted(builds):
             build = builds[build_no_dver][dver]
             tag = promoter.get_to_tag_for_dver(dver)
             uri = kojihelper.get_build_uri(build)
-            out.write("Promoted to %s: [%s|%s]\n" % (tag, build, uri))
+            out.write("| %s | [%s|%s] |\n" % (tag, build, uri))
 
 def write_releasenotes(kojihelper, out, builds, dvers):
     """Write twiki output in release note format. See write_twiki()"""
@@ -770,7 +772,7 @@ def main(argv=None):
     if proceed:
         promoted_builds = promoter.do_promotions(options.dry_run, options.regen)
         if not options.dry_run and options.output_format != 'none':
-            printf("\nTwiki code for this set of promotions:\n")
+            printf("\nJIRA / Twiki code for this set of promotions:\n")
             write_twiki(kojihelper, promoter, promoted_builds, dvers, options.output_format, options.no_date)
     else:
         printf("Not proceeding.")
