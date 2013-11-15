@@ -451,7 +451,7 @@ class KojiLibInter(object):
             owner = self.user
         tag_obj = self.kojisession.getTag(tag)
         if not tag_obj:
-            raise KojiError("Invalid tag %s", tag)
+            raise KojiError("Invalid tag %s" % tag)
         try:
             package_list = self.kojisession.listPackages(tagID=tag_obj['id'], pkgID=package)
         except kojilib.GenericError: # koji raises this if the package doesn't exist
@@ -496,13 +496,13 @@ class KojiLibInter(object):
     def mock_config(self, arch, tag, dist, outpath, name):
         tag_obj = self.kojisession.getTag(tag)
         if not tag_obj:
-            raise KojiError("Invalid tag %s", tag)
+            raise KojiError("Invalid tag %s" % tag)
         config = self.kojisession.getBuildConfig(tag_obj['id'])
         if not config:
-            raise KojiError("Couldn't get config for tag %s", tag)
+            raise KojiError("Couldn't get config for tag %s" % tag)
         repo = self.kojisession.getRepo(config['id'])
         if not repo:
-            raise KojiError("Couldn't get repo for tag %s", tag)
+            raise KojiError("Couldn't get repo for tag %s" % tag)
         opts = {'tag_name': tag_obj['name'],
                 'repoid': repo['id'],
                 'distribution': dist,
