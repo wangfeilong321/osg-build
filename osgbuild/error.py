@@ -78,6 +78,12 @@ class MockError(Error):
     def __init__(self, msg, tb=None):
         Error.__init__(self, "Mock error: " + msg, tb)
 
+
+class ClientCertError(Error):
+    def __init__(self, filename, msg, tb=None):
+        Error.__init__(self, "Client cert error: %s (%s)" % (msg, filename), tb)
+
+
 def type_of_error(err_object):
     if isinstance(err_object, Exception):
         return str(err_object.__class__.__name__)

@@ -9,6 +9,7 @@ import os
 import urllib2
 
 from osgbuild.constants import *
+from osgbuild import clientcert
 from osgbuild import utils
 from osgbuild.error import KojiError, type_of_error
 
@@ -54,6 +55,7 @@ except AttributeError:
     HAVE_KOJILIB = False
 
 
+
 def get_koji_cmd(use_osg_koji):
     """Get the command used to call koji."""
     # Use osg-koji wrapper if available and configured.
@@ -70,32 +72,14 @@ def get_koji_cmd(use_osg_koji):
                              OLD_KOJI_CONF,
                              os.pathsep.join(DATA_FILE_SEARCH_PATH)))
 
-        if not os.path.exists(KOJI_CLIENT_CERT):
-            raise KojiError("Unable to find your Koji client cert at "
-                            + KOJI_CLIENT_CERT)
-
         return ["koji", "--config", conf_file, "--authtype", "ssl"]
     else:
         raise KojiError("Can't find koji or osg-koji!")
 
 
 def get_cn():
-    """Return the user's koji login (their CN, unless otherwise specified
-    on the command line.
-
-    """
-    subject = utils.checked_backtick("openssl x509 -in '%s' -noout -subject"
-                                     " -nameopt multiline" % KOJI_CLIENT_CERT)
-    # Get the first commonName using the negative lookbehind assertion to make
-    # sure we're capturing the right commonName if there are multiple.
-    cn_match = re.search(r"""(?xms)
-        (?!<commonName)
-        ^ \s* commonName \s* = \s* ([^\n]+) \s* $""", subject)
-
-    if cn_match:
-        return cn_match.group(1)
-    else:
-        return None
+    """Return the user's koji login (their CN)"""
+    return clientcert.ClientCert(KOJI_CLIENT_CERT).first_commonname
 
 
 def download_koji_file(task_id, filename, destdir):
@@ -116,7 +100,6 @@ def download_koji_file(task_id, filename, destdir):
 
 
 
-
 class KojiInter(object):
     """An interface around the koji cli"""
     backend = None
@@ -127,11 +110,6 @@ class KojiInter(object):
         self.scratch = opts['scratch']
 
         self.cn = opts['kojilogin'] or get_cn()
-        if not self.cn:
-            raise KojiError("""\
-Unable to determine your Koji login. Either pass --kojilogin or verify that
-'openssl x509 -in %s -noout -subject'
-gives you a subject with a CN""" % KOJI_CLIENT_CERT)
 
         if KojiInter.backend is None:
             if HAVE_KOJILIB and opts.get('koji_backend') != 'shell':
