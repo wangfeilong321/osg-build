@@ -17,7 +17,7 @@ _default:
 	@echo "Nothing to make. Try make install"
 
 clean:
-	rm -f *.py[co] *~ $(PYDIR)/*.py[co] $(PYDIR)/*~
+	rm -f *.py[co] *~ $(PYDIR)/*.py[co] $(PYDIR)/*~ tags
 
 install:
 	@if [ "$(DESTDIR)" = "" ]; then                                        \
