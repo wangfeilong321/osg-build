@@ -80,17 +80,6 @@ DEFAULT_BUILDOPTS_COMMON = {
     'working_directory': '.',
 }
 
-ALLBUILD_BUILDOPTS = DEFAULT_BUILDOPTS_COMMON.copy()
-ALLBUILD_BUILDOPTS.update({
-    'no_wait': True,
-    'regen_repos': False,
-    'scratch': False,
-    'svn': True
-})
-
-ALLBUILD_ALLOWED_OPTNAMES = [
-    'koji_backend', 'kojilogin', 'koji_wrapper', 'no_wait', 'scratch']
-
 DEFAULT_BUILDOPTS_BY_DVER = {
     '5': {
         'distro_tag': 'osg.el5',

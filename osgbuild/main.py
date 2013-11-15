@@ -58,17 +58,13 @@ def main(argv):
     mock_obj = None
     vcs = None
 
-    if task == 'allbuild':
-        log.warning("The 'allbuild' task is deprecated. The 'koji' task now "
-                    "builds on all supported distro versions by default.")
-        buildopts['enabled_dvers'] = DVERS
-    if task in ['koji', 'mock', 'allbuild']:
+    if task in ['koji', 'mock']:
         for dver in buildopts['enabled_dvers']:
             targetopts = buildopts['targetopts_by_dver'][dver]
             targetopts['koji_target'] = targetopts['koji_target'] or target_for_repo_hint(targetopts['repo'], dver)
             targetopts['koji_tag'] = targetopts['koji_tag'] or tag_for_repo_hint(targetopts['repo'], dver)
     # checks
-    if task == 'allbuild' or (task == 'koji' and buildopts['vcs']):
+    if task == 'koji' and buildopts['vcs']:
         # verify working dirs
         for pkg in package_dirs:
             if git.is_git(pkg):
@@ -98,52 +94,38 @@ def main(argv):
     task_ids = []
     task_ids_by_results_dir = dict()
     for pkg in package_dirs:
-        if task == 'allbuild':
-            # allbuild is special--we ignore most options and use
-            # a slightly different set of defaults.
-            for dver in buildopts['enabled_dvers']:
-                dver_buildopts = buildopts.copy()
-                dver_buildopts.update(DEFAULT_BUILDOPTS_BY_DVER[dver])
-                for key in ALLBUILD_ALLOWED_OPTNAMES:
-                    dver_buildopts[key] = buildopts[key]
-                dver_buildopts['koji_target'] = dver_buildopts['koji_target'] or target_for_repo_hint(dver_buildopts['repo'], dver)
-                dver_buildopts['koji_tag'] = dver_buildopts['koji_tag'] or tag_for_repo_hint(dver_buildopts['repo'], dver)
+        for dver in buildopts['enabled_dvers']:
+            dver_buildopts = buildopts.copy()
+            dver_buildopts.update(buildopts['targetopts_by_dver'][dver])
 
-                vcs.koji(pkg, kojiinter.KojiInter(dver_buildopts), dver_buildopts)
+            mock_obj = None
+            koji_obj = None
+            if task == 'koji':
+                koji_obj = kojiinter.KojiInter(dver_buildopts)
+            if task == 'mock':
+                if dver_buildopts['mock_config_from_koji']:
+                    # HACK: We don't want to log in to koji just to get a mock config
+                    dver_buildopts_ = dver_buildopts.copy()
+                    dver_buildopts_['dry_run'] = True
+                    koji_obj = kojiinter.KojiInter(dver_buildopts_)
+                mock_obj = mock.Mock(dver_buildopts, koji_obj)
 
-        else:
-            for dver in buildopts['enabled_dvers']:
-                dver_buildopts = buildopts.copy()
-                dver_buildopts.update(buildopts['targetopts_by_dver'][dver])
-
-                mock_obj = None
-                koji_obj = None
+            if buildopts['vcs'] and task == 'koji':
+                task_ids.append(vcs.koji(pkg, koji_obj, dver_buildopts))
+            else:
+                builder = srpm.SRPMBuild(pkg,
+                                         dver_buildopts,
+                                         mock_obj=mock_obj,
+                                         koji_obj=koji_obj)
+                builder.maybe_autoclean()
+                method = getattr(builder, task)
                 if task == 'koji':
-                    koji_obj = kojiinter.KojiInter(dver_buildopts)
-                if task == 'mock':
-                    if dver_buildopts['mock_config_from_koji']:
-                        # HACK: We don't want to log in to koji just to get a mock config
-                        dver_buildopts_ = dver_buildopts.copy()
-                        dver_buildopts_['dry_run'] = True
-                        koji_obj = kojiinter.KojiInter(dver_buildopts_)
-                    mock_obj = mock.Mock(dver_buildopts, koji_obj)
-
-                if buildopts['vcs'] and task == 'koji':
-                    task_ids.append(vcs.koji(pkg, koji_obj, dver_buildopts))
+                    task_ids_by_results_dir.setdefault(builder.results_dir, [])
+                    task_id = method()
+                    task_ids.append(task_id)
+                    task_ids_by_results_dir[builder.results_dir].append(task_id)
                 else:
-                    builder = srpm.SRPMBuild(pkg,
-                                             dver_buildopts,
-                                             mock_obj=mock_obj,
-                                             koji_obj=koji_obj)
-                    builder.maybe_autoclean()
-                    method = getattr(builder, task)
-                    if task == 'koji':
-                        task_ids_by_results_dir.setdefault(builder.results_dir, [])
-                        task_id = method()
-                        task_ids.append(task_id)
-                        task_ids_by_results_dir[builder.results_dir].append(task_id)
-                    else:
-                        method()
+                    method()
     # end of main loop
     # HACK
     task_ids = filter(None, task_ids)
@@ -291,8 +273,6 @@ def parse_cmdline_args(argv):
    %prog TASK PACKAGE1 <PACKAGE2..n> [options]
 
 Valid tasks are:
-allbuild     Build out of SVN using koji for all supported platforms into the
-             default tags/targets for each platform (deprecated)
 koji         Build using koji
 lint         Discover potential package problems using rpmlint
 mock         Build using mock(1) on the local machine
@@ -599,8 +579,7 @@ def get_task(args):
         raise UsageError('Need task!')
     task = args[0]
 
-    valid_tasks = ['allbuild', 'koji', 'lint', 'mock', 'prebuild', 'prepare',
-                   'quilt', 'rpmbuild']
+    valid_tasks = ['koji', 'lint', 'mock', 'prebuild', 'prepare', 'quilt', 'rpmbuild']
 
     matching_tasks = [x for x in valid_tasks if x.startswith(task)]
 
@@ -631,17 +610,6 @@ def get_buildopts(options, task):
 
     """
 
-    # Hack: if the task is "allbuild", use a different set of
-    # defaults, ignore the config file, and most options.
-    if task == 'allbuild':
-        buildopts = ALLBUILD_BUILDOPTS.copy()
-        for optname in ALLBUILD_ALLOWED_OPTNAMES:
-            optval = getattr(options, optname, None)
-            if optval is not None:
-                buildopts[optname] = optval
-        return buildopts
-
-    # otherwise...
     buildopts = DEFAULT_BUILDOPTS_COMMON.copy()
 
     cfg_items = read_config_file(options.config_file)
