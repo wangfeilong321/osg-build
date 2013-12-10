@@ -34,7 +34,7 @@ SVN_REDHAT_PATH = "/native/redhat"
 SVN_RESTRICTED_BRANCHES = {
     r'^trunk$'                             : 'main',
     r'^branches/upcoming$'                 : 'upcoming',
-    r'^branches/internal$'                 : 'internal',
+    r'^branches/osg-internal$'             : 'internal',
     r'^branches/osg-(?P<osgver>\d+\.\d+)$' : 'versioned'}
 KOJI_RESTRICTED_TARGETS = {
     r'^(el\d+)-osg$'                       : 'main',      #old main
