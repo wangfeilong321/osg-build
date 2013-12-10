@@ -34,16 +34,19 @@ SVN_REDHAT_PATH = "/native/redhat"
 SVN_RESTRICTED_BRANCHES = {
     r'^trunk$'                             : 'main',
     r'^branches/upcoming$'                 : 'upcoming',
+    r'^branches/internal$'                 : 'internal',
     r'^branches/osg-(?P<osgver>\d+\.\d+)$' : 'versioned'}
 KOJI_RESTRICTED_TARGETS = {
     r'^(el\d+)-osg$'                       : 'main',      #old main
     r'^osg-(el\d+)$'                       : 'main',
     r'^(el\d+)-osg-upcoming$'              : 'upcoming',  #old upcoming
     r'^osg-upcoming-(el\d+)$'              : 'upcoming',
+    r'^osg-(el\d+)-internal$'              : 'internal',
     r'^osg-(?P<osgver>\d+\.\d+)-(el\d+)$'  : 'versioned'}
 GIT_RESTRICTED_BRANCHES = {
     r'^(\w*/)?master$'                     : 'main',
     r'^(\w*/)?upcoming$'                   : 'upcoming',
+    r'^(\w*/)?internal$'                   : 'internal',
     r'^(\w*/)?osg-(?P<osgver>\d+\.\d+)$'   : 'versioned'}
 
 CSL_KOJI_DIR = "/p/vdt/workspace/koji-1.6.0"
@@ -102,6 +105,7 @@ REPO_HINTS_STATIC = {
     'new-osg': {'target': 'osg-el%s', 'tag': 'osg-el%s'},
     'old-upcoming': {'target': 'el%s-osg-upcoming', 'tag': 'el%s-osg'},
     'new-upcoming': {'target': 'osg-upcoming-el%s', 'tag': 'osg-el%s'},
+    'internal': {'target': 'osg-el%s-internal', 'tag': 'osg-el%s'},
     'hcc': {'target': 'hcc-el%s', 'tag': 'hcc-el%s'},
     'uscms': {'target': 'uscms-el%s', 'tag': 'uscms-el%s'}
 }
