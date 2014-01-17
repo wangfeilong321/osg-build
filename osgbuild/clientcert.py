@@ -1,5 +1,6 @@
 import re
 import os
+import time
 
 from datetime import datetime
 from osgbuild.error import ClientCertError
@@ -35,7 +36,9 @@ class ClientCert(object):
         if enddate_match:
             # Want to match something like "Nov 15 09:49:34 2013 GMT"
             try:
-                enddate = datetime.strptime(enddate_match.group(1), "%b %d %H:%M:%S %Y %Z")
+                # The Python docs say that the following is the Python 2.4-compatible version of this:
+                #   enddate = datetime.strptime(enddate_match.group(1), "%b %d %H:%M:%S %Y %Z")
+                enddate = datetime(*(time.strptime(enddate_match.group(1), "%b %d %H:%M:%S %Y %Z")[0:6]))
             except ValueError:
                 pass
         if not enddate:
