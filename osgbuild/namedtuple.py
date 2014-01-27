@@ -118,6 +118,7 @@ def namedtuple(typename, field_names, verbose=False, rename=False):
 
 
 
+# pylint: disable=E0102, E1101
 if __name__ == '__main__':
     # verify that instances can be pickled
     from cPickle import loads, dumps

@@ -145,7 +145,7 @@ class MockKojiHelper(promoter.KojiHelper):
 
     def __init__(self, *args):
         self.newly_tagged_packages = []
-        return super(MockKojiHelper, self).__init__(*args)
+        super(MockKojiHelper, self).__init__(*args)
 
     def get_tagged_packages(self, tag):
         return self.tagged_packages_by_tag[tag]
