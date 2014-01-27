@@ -14,6 +14,7 @@ STATIC_ROUTES = {
 import re
 import sys
 import time
+import logging
 
 from osgbuild import constants
 from osgbuild import kojiinter
@@ -21,6 +22,16 @@ from osgbuild import utils
 from osgbuild.utils import printf, print_table
 from optparse import OptionParser
 
+
+# logging. Can't use root logger because its loglevel can't be changed once set
+log = logging.getLogger('osgpromote')
+log.setLevel(logging.INFO)
+log_consolehandler = logging.StreamHandler()
+log_consolehandler.setLevel(logging.INFO)
+log_formatter = logging.Formatter("%(message)s")
+log_consolehandler.setFormatter(log_formatter)
+log.addHandler(log_consolehandler)
+log.propagate = False
 
 class KojiTagsAreMessedUp(Exception):
     """Raised when Koji tags are in an inconsistent or unusable state.
@@ -386,12 +397,11 @@ class Promoter(object):
 
             build = build1 or build2
             if not build:
-                printf("Warning: There is no build matching %s for dver %s.", pkg_or_build, dver, end='')
+                log.warning("There is no build matching %s for dver %s.", pkg_or_build, dver)
                 if not ignore_rejects:
-                    print " Rejected package."
+                    log.warning(" Rejected package.")
                     return {}
                 else:
-                    print ""
                     continue
             builds[dver] = build
 
@@ -402,12 +412,10 @@ class Promoter(object):
         vrs = ['-'.join(split_nvr(builds[x])[1:]) for x in builds]
         vrs_no_dver = [trim_dver(x) for x in vrs]
         if len(set(vrs_no_dver)) > 1:
-            printf("Warning: The versions of the builds matching %s are distinct across dvers.", pkg_or_build, end='')
+            log.warning("The versions of the builds matching %s are distinct across dvers.", pkg_or_build)
             if not ignore_rejects:
-                print " Rejected package."
+                log.warning(" Rejected package.")
                 return {}
-            else:
-                print ""
         return builds
 
     def get_valid_tag_for_dver(self, tag_hint, dver):

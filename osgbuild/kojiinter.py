@@ -407,14 +407,14 @@ class KojiLibInter(object):
 
 
     def init_koji_session(self, login=True):
-        print "Initializing koji session to", self.server
+        log.info("Initializing koji session to %s", self.server)
         self.kojisession = kojilib.ClientSession(self.server, {'user': self.user})
         if login and not self.dry_run:
             self.login_to_koji()
 
 
     def login_to_koji(self):
-        print "Logging in to koji as", self.user
+        log.info("Logging in to koji as %s", self.user)
         try:
             self.kojisession.ssl_login(self.cert, self.ca, self.serverca)
         except Exception, err:
