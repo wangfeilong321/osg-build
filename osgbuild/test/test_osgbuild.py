@@ -62,7 +62,7 @@ def svn_export(path, rev, destpath):
     '''Run svn export on a revision rev of path into destpath'''
     try:
         checked_backtick(
-            ["svn", "export", opj(SVN_ROOT, path), "-r", rev, destpath],
+            ["svn", "export", opj(SVN_ROOT, path) + "@" + rev, "-r", rev, destpath],
             err2out=True)
     except CalledProcessError, err:
         errprintf("Error in svn export:\n%s", err.output)
