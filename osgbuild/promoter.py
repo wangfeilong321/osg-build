@@ -822,7 +822,7 @@ def main(argv=None):
         promoted_builds = promoter.do_promotions(options.dry_run, options.regen)
         if not options.dry_run:
             printf("\nJIRA code for this set of promotions:\n")
-            write_jira(kojihelper, promoted_builds, real_routes, dvers)
+            write_jira(kojihelper, promoted_builds, real_routes)
     else:
         printf("Not proceeding.")
         return 1
