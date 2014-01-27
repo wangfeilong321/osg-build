@@ -1,4 +1,3 @@
-#!/usr/bin/python
 """A package promotion script for OSG"""
 
 
@@ -76,12 +75,12 @@ def any(iterable): # Don't warn about redefining this. pylint: disable=W0622
     return False
 
 def split_nvr(build):
-    """Split an NVR into a [Name, Version, Release] list"""
+    """Split an NVR into a (Name, Version, Release) tuple"""
     match = re.match(r"(?P<name>.+)-(?P<version>[^-]+)-(?P<release>[^-]+)$", build)
     if match:
-        return [match.group('name'), match.group('version'), match.group('release')]
+        return (match.group('name'), match.group('version'), match.group('release'))
     else:
-        return []
+        return ()
 
 def split_dver(build):
     """Split out the dver from the NVR of 'build'.
@@ -90,7 +89,7 @@ def split_dver(build):
     Return the empty string for the dver if it's not in the NVR.
 
     """
-    pattern = re.compile(r".(el\d+)$")
+    pattern = re.compile(r"\.(el\d+)$")
     nvr_no_dver = pattern.sub("", build)
     dver = pattern.search(build)
     return (nvr_no_dver, dver and dver.group(1) or "")
@@ -99,6 +98,40 @@ def trim_dver(build):
     """Remove the dver from the NVR of 'build'"""
     return split_dver(build)[0]
 
+def split_repo_dver(build):
+    """Split out the dist tag from the NVR of a build, returning a tuple
+    containing (NVR (without dist tag), repo, dver).
+    For example, split_repo_dver("foobar-1-1.osg32.el5") returns
+    ("foobar-1-1", "osg32", "el5").
+    The empty string is returned for any of the components that aren't present.
+
+    Since the dist tag isn't a well-defined entity, I'm using the following
+    heuristic to distinguish it:
+        1. If the dist tag exists, it's at the end of the release.
+            (only known exception: gridsite-1.7.15-4.osg.3. This is not
+            handled, but it's not worth the extra code)
+        2. If the dver is in the release, it is at the end of the dist tag.
+        3. The dist tag contains at most 2 components, separated by '.'
+
+    """
+    build_no_dist = build
+    repo = ""
+    dver = ""
+
+    # order matters since later patterns are less specific and would match more
+    pat_1_repo_and_dver = re.compile(r"(?P<build_no_dist>.+)\.(?P<repo>\w+)\.(?P<dver>el\d+)$")
+    pat_2_dver_only = re.compile(r"(?P<build_no_dist>.+)\.(?P<dver>el\d+)$")
+    pat_3_repo_only = re.compile(r"(?P<build_no_dist>.+)\.(?P<repo>\w+)$")
+
+    match = pat_1_repo_and_dver.match(build) or \
+            pat_2_dver_only.match(build) or \
+            pat_3_repo_only.match(build)
+
+    if match:
+        groupdict = match.groupdict()
+        build_no_dist, repo, dver = groupdict['build_no_dist'], groupdict.get('repo', ''), groupdict.get('dver', '')
+
+    return (build_no_dist, repo, dver)
 
 
 class RouteDiscovery(object):
