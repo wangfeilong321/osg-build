@@ -133,7 +133,7 @@ def split_repo_dver(build):
 
     return (build_no_dist, repo, dver)
 
-
+
 class RouteDiscovery(object):
     """For discovering and validating promotion routes.
     In addition to including the predefined routes (from STATIC_ROUTES),
@@ -337,7 +337,7 @@ class RouteDiscovery(object):
         """See validate_route_for_dver; 'route_name' is a key in the 'routes' dict."""
         return self.validate_route_for_dver(self.routes[route_name], dver)
 
-
+
 class Promoter(object):
     """For promoting sets of packages.
     Usage is to add packages or builds via add_promotion and then call
@@ -362,20 +362,15 @@ class Promoter(object):
         Returns nothing; builds to promote are added to tag_pkg_args, which
         is a dict keyed by tag (actual tag, not tag hint) of koji builds that
         should be added to that tag.
-        If pkg_or_build is rejected (see get_builds()), that pkg_or_build is
-        added to the 'rejects' list.
 
         """
         builds = self.get_builds(self.from_tag_hint, self.dvers, pkg_or_build, ignore_rejects=ignore_rejects)
-        if not builds and not ignore_rejects:
-            self.rejects.append(pkg_or_build)
-        else:
-            for dver in builds:
-                to_tag = self.get_to_tag_for_dver(dver)
+        for dver in builds:
+            to_tag = self.get_to_tag_for_dver(dver)
 
-                build = builds[dver]
-                self.tag_pkg_args.setdefault(to_tag, [])
-                self.tag_pkg_args[to_tag].append(build)
+            build = builds[dver]
+            self.tag_pkg_args.setdefault(to_tag, [])
+            self.tag_pkg_args[to_tag].append(build)
 
     def do_promotions(self, dry_run=False, regen=False):
         """Tag all builds selected to be tagged in self.tag_pkg_args.
@@ -458,7 +453,8 @@ class Promoter(object):
             if not build:
                 log.warning("There is no build matching %s for dver %s.", pkg_or_build, dver)
                 if not ignore_rejects:
-                    log.warning(" Rejected package.")
+                    log.warning("Rejected package.")
+                    self.rejects.append(Reject(pkg_or_build, dver, Reject.REASON_NOMATCHING_FOR_DVER))
                     return {}
                 else:
                     continue
@@ -473,7 +469,8 @@ class Promoter(object):
         if len(set(vrs_no_dver)) > 1:
             log.warning("The versions of the builds matching %s are distinct across dvers.", pkg_or_build)
             if not ignore_rejects:
-                log.warning(" Rejected package.")
+                log.warning("Rejected package.")
+                self.rejects.append(Reject(pkg_or_build, dver, Reject.REASON_DISTINCT_ACROSS_DVERS))
                 return {}
         return builds
 
@@ -501,6 +498,9 @@ class Promoter(object):
         given the dver."""
         return self.get_valid_tag_for_dver(self.to_tag_hint, dver)
 
+    def get_rejects(self):
+        return self.rejects
+
     def watch_builds(self, tasks):
         """Helper for do_promotions(). Watch builds being promoted and return
         successful ones.
@@ -523,7 +523,7 @@ class Promoter(object):
 
         return promoted_builds
 
-
+
 # don't care if it has too many methods: pylint: disable=R0904
 class KojiHelper(kojiinter.KojiLibInter):
     """Extra utility functions for dealing with Koji"""
@@ -623,7 +623,7 @@ class KojiHelper(kojiinter.KojiLibInter):
             self.watch_tasks([self.regen_repo(tag)])
 
 
-
+
 #
 # TWiki writing
 #
