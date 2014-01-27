@@ -15,10 +15,10 @@ import re
 import sys
 import time
 
-from osg_build_tools import constants
-from osg_build_tools import kojiinter
-from osg_build_tools import utils
-from osg_build_tools.utils import printf, print_table
+from osgbuild import constants
+from osgbuild import kojiinter
+from osgbuild import utils
+from osgbuild.utils import printf, print_table
 from optparse import OptionParser
 
 

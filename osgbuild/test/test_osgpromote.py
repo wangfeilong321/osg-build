@@ -2,7 +2,7 @@
 
 import unittest
 
-from osg_build_tools import promoter
+from osgbuild import promoter
 
 
 
