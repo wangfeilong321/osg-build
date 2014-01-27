@@ -14,6 +14,11 @@ from osgbuild import utils
 from osgbuild.utils import printf, print_table
 from optparse import OptionParser
 
+try:
+    from collections import namedtuple
+except ImportError:
+    from osgbuild.namedtuple import namedtuple
+
 
 # logging. Can't use root logger because its loglevel can't be changed once set
 log = logging.getLogger('osgpromote')
@@ -33,16 +38,8 @@ class KojiTagsAreMessedUp(Exception):
     """
 
 
-class Route(object):
-    def __init__(self, from_tag_hint, to_tag_hint, repo):
-        self.from_tag_hint = from_tag_hint
-        self.to_tag_hint = to_tag_hint
-        self.repo = repo
-        # for compatibility:
-        self.listform = [from_tag_hint, to_tag_hint, repo]
+Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo'])
 
-    def __getitem__(self, key):
-        return self.listform[key]
 
 class Reject(object):
     REASON_NOMATCHING_FOR_DVER = "No build matching %(pkg_or_build)s for dver %(dver)s"
@@ -60,7 +57,7 @@ STATIC_ROUTES = {
     "old-upcoming": Route("%s-osg-upcoming-development", "%s-osg-upcoming-testing", "osg"),
     "old-testing": Route("%s-osg-development", "%s-osg-testing", "osg"),
     "old-contrib": Route("%s-osg-testing", "%s-osg-contrib", "osg"),
-    "new-upcoming": Route("osg-upcoming-%s-development", "osg-upcoming-%s-testing", "osg"),
+    "new-upcoming": Route("osg-upcoming-%s-development", "osg-upcoming-%s-testing", "osgup"),
    }
 
 #
