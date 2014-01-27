@@ -3,8 +3,10 @@
 import logging
 import unittest
 import sys
+import StringIO
 
 from osgbuild import promoter
+from osgbuild import constants
 
 log = logging.getLogger('osgpromote')
 log.setLevel(logging.ERROR)
@@ -110,18 +112,18 @@ class MockKojiHelper(promoter.KojiHelper):
                 ],
             'osg-3.1-el6-development': [
                 {'nvr': 'goodpkg-2000-1.osg31.el6', 'latest': True},
-                {'nvr': 'otherrejectme-1-1.osg31.el6', 'latest': True},
+                {'nvr': 'reject-distinct-repos-1-1.osg31.el6', 'latest': True},
                 ],
             'osg-3.2-el5-development': [
                 {'nvr': 'goodpkg-1999-1.osg32.el5', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg32.el5', 'latest': True},
-                {'nvr': 'rejectme-1-1.osg32.el5', 'latest': True},
+                {'nvr': 'reject-distinct-dvers-1-1.osg32.el5', 'latest': True},
                 ],
             'osg-3.2-el6-development': [
                 {'nvr': 'goodpkg-1999-1.osg32.el6', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg32.el6', 'latest': True},
-                {'nvr': 'rejectme-2-1.osg32.el6', 'latest': True},
-                {'nvr': 'otherrejectme-2-1.osg32.el6', 'latest': True},
+                {'nvr': 'reject-distinct-dvers-2-1.osg32.el6', 'latest': True},
+                {'nvr': 'reject-distinct-repos-2-1.osg32.el6', 'latest': True},
                 ],
             }
     tagged_packages_by_tag = {
@@ -129,14 +131,14 @@ class MockKojiHelper(promoter.KojiHelper):
                 'goodpkg'],
             'osg-3.1-el6-development': [
                 'goodpkg',
-                'otherrejectme'],
+                'reject-distinct-repos'],
             'osg-3.2-el5-development': [
                 'goodpkg',
-                'rejectme'],
+                'reject-distinct-dvers'],
             'osg-3.2-el6-development': [
                 'goodpkg',
-                'rejectme',
-                'otherrejectme'],
+                'reject-distinct-dvers',
+                'reject-distinct-repos'],
             }
 
     want_success = True
@@ -156,6 +158,9 @@ class MockKojiHelper(promoter.KojiHelper):
             if build['nvr'].startswith(package+'-') and build['latest']:
                 return build['nvr']
         return None
+
+    def koji_get_build(self, build_nvr):
+        return {'id': 319}
 
     def tag_build(self, tag, build):
         self.newly_tagged_packages.append(build)
@@ -182,6 +187,7 @@ class TestPromoter(unittest.TestCase):
         self.kojihelper = MockKojiHelper(False)
         self.testing_route = self.routes['testing']
         self.testing_promoter = self._make_promoter(self.testing_route)
+        self.multi_routes = [self.routes['3.1-testing'], self.routes['3.2-testing']]
 
     def _make_promoter(self, route, dvers=None):
         dvers = dvers or TestPromoter.dvers
@@ -210,32 +216,30 @@ class TestPromoter(unittest.TestCase):
 
     def test_reject_add(self):
         self.testing_promoter.add_promotion('goodpkg')
-        self.testing_promoter.add_promotion('rejectme')
+        self.testing_promoter.add_promotion('reject-distinct-dvers')
         self.assertFalse(
-            'rejectme-1-1.osg32.el5' in
+            'reject-distinct-dvers-1-1.osg32.el5' in
             [x.nvr for x in self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el5']])
 
     def test_reject_add_with_ignore(self):
         self.testing_promoter.add_promotion('goodpkg')
-        self.testing_promoter.add_promotion('rejectme', ignore_rejects=True)
+        self.testing_promoter.add_promotion('reject-distinct-dvers', ignore_rejects=True)
         self.assertTrue(
-            'rejectme-1-1.osg32.el5' in
+            'reject-distinct-dvers-1-1.osg32.el5' in
             [x.nvr for x in self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el5']])
         self.assertTrue(
-            'rejectme-2-1.osg32.el6' in
+            'reject-distinct-dvers-2-1.osg32.el6' in
             [x.nvr for x in self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el6']])
 
     def test_new_reject(self):
-        self.testing_promoter.add_promotion('rejectme')
-        rejs = self.testing_promoter.get_rejects()
+        self.testing_promoter.add_promotion('reject-distinct-dvers')
+        rejs = self.testing_promoter.rejects
         self.assertEqual(1, len(rejs))
-        self.assertEqual('rejectme', rejs[0].pkg_or_build)
+        self.assertEqual('reject-distinct-dvers', rejs[0].pkg_or_build)
         self.assertEqual(promoter.Reject.REASON_DISTINCT_ACROSS_DISTS, rejs[0].reason)
 
     def test_multi_promote(self):
-        route1 = self.routes['3.1-testing']
-        route2 = self.routes['3.2-testing']
-        prom = self._make_promoter([route1, route2])
+        prom = self._make_promoter(self.multi_routes)
         prom.add_promotion('goodpkg-2000-1')
         for dver in ['el5', 'el6']:
             for osgver in ['3.1', '3.2']:
@@ -247,24 +251,73 @@ class TestPromoter(unittest.TestCase):
                 self.assertTrue(pkg in [x.nvr for x in prom.tag_pkg_args[tag]])
 
     def test_cross_dist_reject(self):
-        prom = self._make_promoter([self.routes['3.1-testing'], self.routes['3.2-testing']], ['el6'])
-        prom.add_promotion('otherrejectme')
-        rejs = prom.get_rejects()
+        prom = self._make_promoter(self.multi_routes, ['el6'])
+        prom.add_promotion('reject-distinct-repos')
+        rejs = prom.rejects
         self.assertEqual(1, len(rejs))
 
     def test_do_promotions(self):
         self.testing_promoter.add_promotion('goodpkg')
         promoted_builds = self.testing_promoter.do_promotions()
-        self.assertTrue('goodpkg-2000-1' in promoted_builds)
+        self.assertEqual(2, len(self.kojihelper.newly_tagged_packages))
+        for dver in ['el5', 'el6']:
+            tag = 'osg-3.2-%s-testing' % dver
+            dist = 'osg32.%s' % dver
+            nvr = 'goodpkg-2000-1.%s' % dist
+            self.assertTrue(tag in promoted_builds)
+            self.assertTrue(nvr in [x.nvr for x in promoted_builds[tag]])
+            self.assertEqual(1, len(promoted_builds[tag]))
+        self.assertEqual(2, len(promoted_builds))
 
     def test_do_multi_promotions(self):
-        routes = [self.routes['3.1-testing'], self.routes['3.2-testing']]
-        prom = self._make_promoter(routes)
+        prom = self._make_promoter(self.multi_routes)
         prom.add_promotion('goodpkg-2000-1')
         promoted_builds = prom.do_promotions()
         self.assertEqual(4, len(self.kojihelper.newly_tagged_packages))
-        self.assertTrue('goodpkg-2000-1' in promoted_builds)
-        self.assertEqual(4, len(promoted_builds['goodpkg-2000-1']))
+        for osgver in ['3.1', '3.2']:
+            for dver in ['el5', 'el6']:
+                tag = 'osg-%s-%s-testing' % (osgver, dver)
+                dist = 'osg%s.%s' % (osgver.replace(".", ""), dver)
+                nvr = 'goodpkg-2000-1.%s' % dist
+                self.assertTrue(tag in promoted_builds)
+                self.assertTrue(nvr in [x.nvr for x in promoted_builds[tag]])
+                self.assertEqual(1, len(promoted_builds[tag]))
+        self.assertEqual(4, len(promoted_builds))
+
+    def _test_write_jira(self, real_promotions):
+        out = StringIO.StringIO()
+        promoted_builds = {}
+        if real_promotions:
+            prom = self._make_promoter(self.multi_routes)
+            prom.add_promotion('goodpkg-2000-1')
+            promoted_builds = prom.do_promotions()
+        expected_lines = [
+            "*Promotions*",
+            "Promoted goodpkg-2000-1 to osg-3.1-el*-testing, osg-3.2-el*-testing",
+            "|| Tag || Build ||"]
+        for osgver in ['3.1', '3.2']:
+            for dver in ['el5', 'el6']:
+                tag = 'osg-%s-%s-testing' % (osgver, dver)
+                dist = 'osg%s.%s' % (osgver.replace(".", ""), dver)
+                nvr = 'goodpkg-2000-1.%s' % dist
+
+                build = promoter.Build.new_from_nvr(nvr)
+                if not real_promotions:
+                    promoted_builds[tag] = [build]
+                build_uri = "%s/koji/buildinfo?buildID=%d" % (constants.HTTPS_KOJI_HUB, 319)
+                expected_lines.append("| %s | [%s|%s] |" % (tag, build.nvr, build_uri))
+        expected_lines.append("")
+        promoter.write_jira(self.kojihelper, promoted_builds, self.multi_routes, out)
+        actual_lines = out.getvalue().split("\n")
+        for idx, expected_line in enumerate(expected_lines):
+            self.assertEqual(expected_line, actual_lines[idx])
+        self.assertEqual(len(expected_lines), len(actual_lines))
+
+    def test_write_jira(self):
+        self._test_write_jira(real_promotions=False)
+
+    def test_all(self):
+        self._test_write_jira(real_promotions=True)
 
 
 

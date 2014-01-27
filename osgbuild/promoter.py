@@ -19,6 +19,7 @@ try:
 except ImportError:
     from osgbuild.namedtuple import namedtuple
 
+DEFAULT_ROUTE = 'testing'
 
 # logging. Can't use root logger because its loglevel can't be changed once set
 log = logging.getLogger('osgpromote')
@@ -84,7 +85,7 @@ class Reject(object):
         self.dist = dist
         self.reason = reason
 
-    def str(self):
+    def __str__(self):
         return self.reason % {'pkg_or_build': self.pkg_or_build, 'dist': self.dist}
 
 STATIC_ROUTES = {
@@ -372,7 +373,6 @@ class Promoter(object):
             self.routes = list(routes)
         else:
             raise TypeError("Unexpected type for routes: %s" % type(routes))
-        self.to_tag_hint, self.repo = self.routes[0][1:] # TODO
         self.dvers = dvers
         self.kojihelper = kojihelper
 
@@ -485,14 +485,6 @@ class Promoter(object):
             raise KojiTagsAreMessedUp("Can't find tag %s in koji" % tag)
         return tag
 
-    def get_to_tag_for_dver(self, dver):
-        """Convenience function to get the actual tag we will tag a build into
-        given the dver."""
-        return self._get_valid_tag_for_dver(self.to_tag_hint, dver)
-
-    def get_rejects(self):
-        return self.rejects
-
     def do_promotions(self, dry_run=False, regen=False):
         """Tag all builds selected to be tagged in self.tag_pkg_args.
         self.tag_pkg_args is a list of (tag, [builds]) pairs.
@@ -521,18 +513,18 @@ class Promoter(object):
                 # Launch the builds
                 if not dry_run:
                     task_id = self.kojihelper.tag_build(tag, build.nvr)
-                    tasks[task_id] = build
+                    tasks[task_id] = (tag, build)
                 else:
                     printf("tagBuild('%s', '%s')", tag, build.nvr)
 
+        promoted_builds = dict(self.tag_pkg_args)
         if not dry_run:
             promoted_builds = self.watch_builds(tasks)
 
             if regen:
                 print "--- Regenerating repos"
                 self.kojihelper.regen_repos(tags_to_regen=self.tag_pkg_args.keys())
-
-            return promoted_builds
+        return promoted_builds
 
     def watch_builds(self, tasks):
         """Helper for do_promotions(). Watch builds being promoted and return
@@ -546,11 +538,10 @@ class Promoter(object):
         self.kojihelper.watch_tasks(list(tasks.keys()))
 
         promoted_builds = {}
-        for task_id in tasks:
-            build = tasks[task_id]
+        for task_id, (tag, build) in tasks.items():
             if self.kojihelper.get_task_state(task_id) == 'CLOSED':
-                promoted_builds.setdefault(build.nvr_no_dist, dict())
-                promoted_builds[build.nvr_no_dist][build.dist] = build
+                promoted_builds.setdefault(tag, [])
+                promoted_builds[tag].append(build)
             else:
                 printf("* Error promoting build %s", build.nvr)
 
@@ -594,10 +585,13 @@ class KojiHelper(kojiinter.KojiLibInter):
         else:
             return None
 
-    def get_build_uri(self, build):
+    def get_build_uri(self, build_nvr):
         """Return a URI to the kojiweb page of the build with the given NVR"""
-        buildinfo = self.kojisession.getBuild(build)
+        buildinfo = self.koji_get_build(build_nvr)
         return ("%s/koji/buildinfo?buildID=%d" % (constants.HTTPS_KOJI_HUB, int(buildinfo['id'])))
+
+    def koji_get_build(self, build_nvr):
+        return self.kojisession.getBuild(build_nvr)
 
     def get_first_tag(self, match, terms):
         """Return the first koji tag matching 'terms'.
@@ -658,77 +652,26 @@ class KojiHelper(kojiinter.KojiLibInter):
 
 
 #
-# TWiki writing
+# JIRA writing
 #
-def write_twiki(kojihelper, promoter, builds, dvers, output_format, no_date=False, out=None):
-    """Print TWiki code for the promoted builds, with links.
-    'kojihelper' is an instance of KojiHelper.
-    'promoter' is an instance of Promoter.
-    'builds' is data structure returned by Promoter.do_promotions.
-    'dvers' is a list of strings.
-    'output_format' can be:
-        'relnote', in which case a bulleted list grouped by dver is printed.
-        'old' or 'prerelnote', in which case table rows are printed, one for
-        each set of builds, with an optional date (if no_date is False).
-    'out' is an output stream (such as a file). sys.stdout is used if not
-    specified.
+
+
+def write_jira(kojihelper, promoted_builds, routes, out=None):
+    """Write input suitable for embedding into a JIRA ticket.
     """
-    out = out or sys.stdout
-    if output_format == 'relnote':
-        write_releasenotes(kojihelper, out, builds, dvers)
-    elif output_format == 'old' or output_format == 'prerelnote':
-        write_prereleasenotes(kojihelper, out, builds, no_date)
-    elif output_format == 'jira':
-        write_jira(kojihelper, promoter, out, builds, dvers)
-    elif output_format == 'none':
-        pass
-    else:
-        # Sanity check, but optparse should have caught this already
-        print >> sys.stderr, "Unknown output format!"
-
-
-def write_jira(kojihelper, promoter, out, builds, dvers):
-    """Write input suitable for embedding into a JIRA ticket. See write_twiki()"""
     # Format
     # | TAG | build-1.2.osg31.el5 |
+    out = out or sys.stdout
     out.write("*Promotions*\n")
-    out.write("|| Tag || Build ||\n")
-    for dver in dvers:
-        for build_no_dver in sorted(builds):
-            build = builds[build_no_dver][dver]
-            tag = promoter.get_to_tag_for_dver(dver)
-            uri = kojihelper.get_build_uri(build)
-            out.write("| %s | [%s|%s] |\n" % (tag, build, uri))
-
-def write_releasenotes(kojihelper, out, builds, dvers):
-    """Write twiki output in release note format. See write_twiki()"""
-    # Release note format
-    #    * build-1-2.osg.el5
-    #    * build-1-2.osg.el6
-    for dver in dvers:
-        for build_no_dver in sorted(builds):
-            build = builds[build_no_dver][dver]
-            out.write("   * [[%s][%s]]\n" % (kojihelper.get_build_uri(build), build))
-
-def write_prereleasenotes(kojihelper, out, builds, no_date):
-    """Write twiki output in PreReleaseNotes format. See write_twiki()"""
-    # PreReleaseNotes format
-    # | DATE | build-1-2.osg (el5+el6) |
-    first = True
-    for build_no_dver in sorted(builds):
-        if first and not no_date:
-            out.write("| %s |" % time.strftime("%Y-%m-%d"))
-            first = False
-        else:
-            out.write("||")
-        out.write(" %(build_no_dver)s " % locals())
-        build_links = []
-        for dver in sorted(builds[build_no_dver]):
-            build = builds[build_no_dver][dver]
-            build_links.append("[[%s][%s]]" % (kojihelper.get_build_uri(build), dver))
-        out.write("(" + "+".join(build_links) + ")")
-        out.write(" |\n")
-
+    nvrs_no_dist = set()
+    table = "|| Tag || Build ||\n"
+    for tag in sorted(promoted_builds):
+        for build in promoted_builds[tag]:
+            uri = kojihelper.get_build_uri(build.nvr)
+            table += "| %s | [%s|%s] |\n" % (tag, build.nvr, uri)
+            nvrs_no_dist.add(build.nvr_no_dist)
+    out.write("Promoted %s to %s\n" % (", ".join(sorted(nvrs_no_dist)), ", ".join([x.to_tag_hint % "el*" for x in routes])))
+    out.write(table)
 
 #
 # Command line and main
@@ -736,24 +679,21 @@ def write_prereleasenotes(kojihelper, out, builds, no_date):
 
 def parse_cmdline_args(all_dvers, valid_routes, argv):
     """Return a tuple of (options, positional args)"""
-    helpstring = "%prog -r|--route ROUTE [options] <packages or builds>"
+    helpstring = "%prog [-r|--route ROUTE...] [options] <packages or builds>"
     helpstring += "\n\nValid routes are:\n"
     for route in sorted(valid_routes.keys()):
         helpstring += " - %-14s: %-30s -> %s\n" % (
             route, valid_routes[route][0] % '*', valid_routes[route][1] % '*')
+
     parser = OptionParser(helpstring)
 
-    parser.add_option("-r", "--route", default="testing", type='choice', choices=valid_routes.keys(),
-                      help="The promotion route to use.")
+    parser.add_option("-r", "--route", dest="routes", action="append",
+                      help="The promotion route to use. May be specified multiple times."
+                      "If not specified, will use the %r route." % DEFAULT_ROUTE)
     parser.add_option("-n", "--dry-run", action="store_true", default=False,
                       help="Do not promote, just show what would be done")
     parser.add_option("--ignore-rejects", dest="ignore_rejects", action="store_true", default=False,
                       help="Ignore rejections due to version mismatch between dvers or missing package for one dver")
-    of_choices = ['old', 'prerelnote', 'relnote', 'jira', 'none']
-    parser.add_option("--output-format", "--of", default='jira', type='choice', choices=of_choices,
-                      help="Valid output formats are: " + ", ".join(of_choices))
-    parser.add_option("--no-date", "--nodate", default=False, action="store_true",
-                      help="Do not add the date to the wiki code")
     parser.add_option("--regen", default=False, action="store_true",
                       help="Regenerate repo(s) afterward")
     parser.add_option("-y", "--assume-yes", action="store_true", default=False,
@@ -774,17 +714,20 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
     if not options.dvers:
         parser.error("No dvers found to promote")
 
-    if options.route:
+    matched_routes = []
+    if options.routes:
         # User is allowed to specify the shortest unambiguous prefix of a route
-        matching_routes = [x for x in valid_routes.keys() if x.startswith(options.route)]
-        if len(matching_routes) > 1:
-            parser.error("Ambiguous route. Matching routes are: " + ", ".join(matching_routes))
-        elif not matching_routes:
-            parser.error("Invalid route. Valid routes are: " + ", ".join(valid_routes.keys()))
-        else:
-            options.route = matching_routes[0]
+        for route in options.routes:
+            matching_routes = [x for x in valid_routes.keys() if x.startswith(route)]
+            if len(matching_routes) > 1:
+                parser.error("Ambiguous route. Matching routes are: " + ", ".join(matching_routes))
+            elif not matching_routes:
+                parser.error("Invalid route. Valid routes are: " + ", ".join(valid_routes.keys()))
+            else:
+                matched_routes.append(matching_routes[0])
     else:
-        parser.error("Missing required parameter '--route'")
+        matched_routes = [valid_routes[DEFAULT_ROUTE]]
+    options.routes = matched_routes
 
     return (options, args)
 
@@ -829,35 +772,41 @@ def main(argv=None):
     options, pkgs_or_builds = parse_cmdline_args(kojihelper.get_all_dvers(), valid_routes, argv)
 
     dvers = options.dvers
-    route = options.route
+    routes = options.routes
 
-    dvers_for_route = route_discovery.get_dvers_for_route_by_name(route)
-    for dver in dvers:
-        if dver not in dvers_for_route:
-            printf("The dver %s is not available for route %s.", dver, route)
-            printf("The available dvers for that route are: %s", ", ".join(dvers_for_route))
-            sys.exit(1)
+    for route in routes:
+        dvers_for_route = route_discovery.get_dvers_for_route_by_name(route)
+        for dver in dvers:
+            if dver not in dvers_for_route:
+                printf("The dver %s is not available for route %s.", dver, route)
+                printf("The available dvers for that route are: %s", ", ".join(dvers_for_route))
+                sys.exit(1)
 
     if not options.dry_run:
         kojihelper.login_to_koji()
 
-    printf("Promoting from %s to %s for dvers: %s",
-           valid_routes[route][0] % 'el*',
-           valid_routes[route][1] % 'el*',
-           ", ".join(dvers))
+    for route in routes:
+        printf("Promoting from %s to %s for dvers: %s",
+               valid_routes[route][0] % 'el*',
+               valid_routes[route][1] % 'el*',
+               ", ".join(dvers))
     printf("Examining the following packages/builds:\n%s", "\n".join(["'" + x + "'" for x in pkgs_or_builds]))
 
-    promoter = Promoter(kojihelper, valid_routes[route], dvers)
+    real_routes = [valid_routes[route] for route in routes]
+    promoter = Promoter(kojihelper, real_routes, dvers)
     for pkgb in pkgs_or_builds:
         promoter.add_promotion(pkgb, options.ignore_rejects)
 
     if promoter.rejects:
-        print "Rejected package or builds:\n" + "\n".join(promoter.rejects)
+        print "Rejected package or builds:\n" + "\n".join([str(x) for x in promoter.rejects])
         print "Rejects will not be promoted! Rerun with --ignore-rejects to promote them anyway."
 
     print "Promotion plan:"
     if any(promoter.tag_pkg_args.values()):
-        print_table(promoter.tag_pkg_args)
+        text_args = {}
+        for tag, builds in promoter.tag_pkg_args.items():
+            text_args[tag] = [x.nvr for x in builds]
+        print_table(text_args)
     else:
         printf("Nothing will be promoted!")
         return 1
@@ -871,9 +820,9 @@ def main(argv=None):
 
     if proceed:
         promoted_builds = promoter.do_promotions(options.dry_run, options.regen)
-        if not options.dry_run and options.output_format != 'none':
-            printf("\nJIRA / Twiki code for this set of promotions:\n")
-            write_twiki(kojihelper, promoter, promoted_builds, dvers, options.output_format, options.no_date)
+        if not options.dry_run:
+            printf("\nJIRA code for this set of promotions:\n")
+            write_jira(kojihelper, promoted_builds, real_routes, dvers)
     else:
         printf("Not proceeding.")
         return 1
