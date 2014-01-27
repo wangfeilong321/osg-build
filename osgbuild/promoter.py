@@ -45,6 +45,17 @@ class Route(object):
     def __getitem__(self, key):
         return self.listform[key]
 
+class Reject(object):
+    REASON_NOMATCHING_FOR_DVER = "No build matching %(pkg_or_build)s for dver %(dver)s"
+    REASON_DISTINCT_ACROSS_DVERS = "Build versions matching %(pkg_or_build)s distinct across dvers"
+    def __init__(self, pkg_or_build, dver, reason):
+        self.pkg_or_build = pkg_or_build
+        self.dver = dver
+        self.reason = reason
+
+    def str(self):
+        return self.reason % {'pkg_or_build': self.pkg_or_build, 'dver': self.dver}
+
 STATIC_ROUTES = {
     "hcc": Route("hcc-%s-testing", "hcc-%s-release", "hcc"),
     "old-upcoming": Route("%s-osg-upcoming-development", "%s-osg-upcoming-testing", "osg"),

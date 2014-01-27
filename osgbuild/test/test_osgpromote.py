@@ -171,6 +171,17 @@ class TestPromoter(unittest.TestCase):
         self.assertTrue('reject-1-1.osg32.el5' in prom.tag_pkg_args[route.to_tag_hint % 'el5'])
         self.assertTrue('reject-2-1.osg32.el6' in prom.tag_pkg_args[route.to_tag_hint % 'el6'])
 
+    def test_new_reject(self):
+        route = self.routes['testing']
+        prom = self._makePromoter(route)
+        prom.add_promotion('reject')
+        rejs = prom.get_rejects()
+        self.assertEqual(len(rejs), 1)
+        self.assertTrue(rejs[0].pkg_or_build == 'reject')
+        self.assertTrue(rejs[0].reason == promoter.Rejects.REASON_DISTINCT_ACROSS_DVERS)
+
+
+
 
 
 if __name__ == '__main__':
