@@ -363,13 +363,18 @@ class Promoter(object):
     do_promotions should not be called twice.
 
     """
-    def __init__(self, kojihelper, route, dvers):
-        """kojihelper is an instance of KojiHelper. route is a
-        (from_tag_hint, to_tag_hint pair). dvers is a list of strings.
+    def __init__(self, kojihelper, routes, dvers):
+        """kojihelper is an instance of KojiHelper. routes is a list of Route objects. dvers is a list of strings.
         """
         self.tag_pkg_args = {}
         self.rejects = []
-        self.from_tag_hint, self.to_tag_hint, self.repo = route
+        if isinstance(routes, Route):
+            self.routes = [routes]
+        elif isinstance(routes, list) or isinstance(routes, tuple):
+            self.routes = list(routes)
+        else:
+            raise TypeError("Unexpected type for routes: %s" % type(routes))
+        self.to_tag_hint, self.repo = self.routes[0][1:] # TODO
         self.dvers = dvers
         self.kojihelper = kojihelper
 
@@ -382,14 +387,15 @@ class Promoter(object):
         should be added to that tag.
 
         """
-        builds = self.get_builds(self.from_tag_hint, self.repo, self.dvers, pkg_or_build, ignore_rejects)
-        checked_builds = self.check_distinct_dists(pkg_or_build, builds, self.dvers, ignore_rejects)
-        for dver in checked_builds:
-            to_tag = self.get_to_tag_for_dver(dver)
+        for route in self.routes:
+            builds = self.get_builds(route, self.dvers, pkg_or_build, ignore_rejects)
+            checked_builds = self.check_distinct_dists(pkg_or_build, builds, self.dvers, ignore_rejects)
+            for dver in checked_builds:
+                to_tag = route.to_tag_hint % dver
 
-            build = checked_builds[dver]
-            self.tag_pkg_args.setdefault(to_tag, [])
-            self.tag_pkg_args[to_tag].append(build.nvr)
+                build = checked_builds[dver]
+                self.tag_pkg_args.setdefault(to_tag, [])
+                self.tag_pkg_args[to_tag].append(build.nvr)
 
     def do_promotions(self, dry_run=False, regen=False):
         """Tag all builds selected to be tagged in self.tag_pkg_args.
@@ -465,10 +471,10 @@ class Promoter(object):
             build_obj = Build.new_from_nvr(build_nvr)
             return build_obj
 
-    def get_builds(self, tag_hint, repo, dvers, pkg_or_build, ignore_rejects=False):
+    def get_builds(self, route, dvers, pkg_or_build, ignore_rejects=False):
         """Get a dict of builds keyed by dver for pkg_or_build.
         Uses _get_build to get the build matching pkg_or_build for the given
-        repo and all given dvers.
+        route and all given dvers.
 
         If matching builds are found for one but not all dvers then all builds
         will be rejected, unless ignore_rejects is True. Rejections are added
@@ -478,6 +484,8 @@ class Promoter(object):
         empty dict is returned.
 
         """
+        tag_hint = route.from_tag_hint
+        repo = route.repo
         builds = {}
         # Find each build for all dvers matching pkg_or_build
         for dver in dvers:
@@ -494,8 +502,9 @@ class Promoter(object):
         return builds
 
     def check_distinct_dists(self, pkg_or_build, builds, dvers, ignore_rejects=False):
-        # find builds where the VERSION-RELEASEs (without dver) are distinct
+        # find builds where the VERSION-RELEASEs (without dist tag) are distinct
         # between the dvers we are running the script for, and reject them.
+        # TODO Does not check if the VRs differ across the dists yet
         vrs_no_dist = [builds[dver].vr_no_dist for dver in builds]
         if len(set(vrs_no_dist)) > 1:
             if not ignore_rejects:

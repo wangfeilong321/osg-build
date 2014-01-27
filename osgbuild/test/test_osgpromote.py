@@ -108,31 +108,37 @@ class TestRouteDiscovery(unittest.TestCase):
 class MockKojiHelper(promoter.KojiHelper):
     tagged_builds_by_tag = {
             'osg-3.1-el5-development': [
-                {'nvr': 'foobar-2000-1.osg31.el5', 'latest': True},
+                {'nvr': 'goodpkg-2000-1.osg31.el5', 'latest': True},
                 ],
             'osg-3.1-el6-development': [
-                {'nvr': 'foobar-2000-1.osg31.el6', 'latest': True},
+                {'nvr': 'goodpkg-2000-1.osg31.el6', 'latest': True},
                 {'nvr': 'otherrejectme-1-1.osg31.el6', 'latest': True},
                 ],
             'osg-3.2-el5-development': [
-                {'nvr': 'foobar-1999-1.osg32.el5', 'latest': False},
-                {'nvr': 'foobar-2000-1.osg32.el5', 'latest': True},
+                {'nvr': 'goodpkg-1999-1.osg32.el5', 'latest': False},
+                {'nvr': 'goodpkg-2000-1.osg32.el5', 'latest': True},
                 {'nvr': 'rejectme-1-1.osg32.el5', 'latest': True},
                 ],
             'osg-3.2-el6-development': [
-                {'nvr': 'foobar-1999-1.osg32.el6', 'latest': False},
-                {'nvr': 'foobar-2000-1.osg32.el6', 'latest': True},
+                {'nvr': 'goodpkg-1999-1.osg32.el6', 'latest': False},
+                {'nvr': 'goodpkg-2000-1.osg32.el6', 'latest': True},
                 {'nvr': 'rejectme-2-1.osg32.el6', 'latest': True},
                 {'nvr': 'otherrejectme-2-1.osg32.el6', 'latest': True},
                 ],
             }
     tagged_packages_by_tag = {
+            'osg-3.1-el5-development': [
+                'goodpkg'],
+            'osg-3.1-el6-development': [
+                'goodpkg',
+                'otherrejectme'],
             'osg-3.2-el5-development': [
-                'foobar',
+                'goodpkg',
                 'rejectme'],
             'osg-3.2-el6-development': [
-                'foobar',
-                'rejectme'],
+                'goodpkg',
+                'rejectme',
+                'otherrejectme'],
             }
 
     def get_tagged_packages(self, tag):
@@ -155,57 +161,78 @@ class TestPromoter(unittest.TestCase):
         self.route_discovery = promoter.RouteDiscovery(TAGS)
         self.routes = self.route_discovery.get_routes()
         self.kojihelper = MockKojiHelper(False)
+        self.testing_route = self.routes['testing']
+        self.testing_promoter = self._make_promoter(self.testing_route)
 
-    def _makePromoter(self, route, dvers=None):
+    def _make_promoter(self, route, dvers=None):
         dvers = dvers or TestPromoter.dvers
         return promoter.Promoter(self.kojihelper, route, dvers)
 
     def test_add_promotion(self):
-        route = self.routes['testing']
-        prom = self._makePromoter(route)
-        prom.add_promotion('foobar')
+        self.testing_promoter.add_promotion('goodpkg')
         for dver in self.dvers:
-            self.assertTrue('foobar-2000-1.osg32.%s' % dver in prom.tag_pkg_args[route.to_tag_hint % dver])
+            self.assertTrue(
+                'goodpkg-2000-1.osg32.%s' % dver in
+                self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % dver])
+
+    def test_add_promotion_with_nvr(self):
+        self.testing_promoter.add_promotion('goodpkg-2000-1.osg32.el5')
+        for dver in self.dvers:
+            self.assertTrue(
+                'goodpkg-2000-1.osg32.%s' % dver in
+                self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % dver])
+
+    def test_add_promotion_with_nvr_no_dist(self):
+        self.testing_promoter.add_promotion('goodpkg-2000-1')
+        for dver in self.dvers:
+            self.assertTrue(
+                'goodpkg-2000-1.osg32.%s' % dver in
+                self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % dver])
 
     def test_reject_add(self):
-        route = self.routes['testing']
-        prom = self._makePromoter(route)
-        prom.add_promotion('foobar')
-        prom.add_promotion('rejectme')
-        self.assertFalse('rejectme-1-1.osg32.el5' in prom.tag_pkg_args[route.to_tag_hint % 'el5'])
+        self.testing_promoter.add_promotion('goodpkg')
+        self.testing_promoter.add_promotion('rejectme')
+        self.assertFalse(
+            'rejectme-1-1.osg32.el5' in
+            self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el5'])
 
     def test_reject_add_with_ignore(self):
-        route = self.routes['testing']
-        prom = self._makePromoter(route)
-        prom.add_promotion('foobar')
-        prom.add_promotion('rejectme', ignore_rejects=True)
-        self.assertTrue('rejectme-1-1.osg32.el5' in prom.tag_pkg_args[route.to_tag_hint % 'el5'])
-        self.assertTrue('rejectme-2-1.osg32.el6' in prom.tag_pkg_args[route.to_tag_hint % 'el6'])
+        self.testing_promoter.add_promotion('goodpkg')
+        self.testing_promoter.add_promotion('rejectme', ignore_rejects=True)
+        self.assertTrue(
+            'rejectme-1-1.osg32.el5' in
+            self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el5'])
+        self.assertTrue(
+            'rejectme-2-1.osg32.el6' in
+            self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el6'])
 
     def test_new_reject(self):
-        route = self.routes['testing']
-        prom = self._makePromoter(route)
-        prom.add_promotion('rejectme')
-        rejs = prom.get_rejects()
+        self.testing_promoter.add_promotion('rejectme')
+        rejs = self.testing_promoter.get_rejects()
         self.assertEqual(1, len(rejs))
         self.assertEqual('rejectme', rejs[0].pkg_or_build)
         self.assertEqual(promoter.Reject.REASON_DISTINCT_ACROSS_DISTS, rejs[0].reason)
 
     def test_multi_promote(self):
-        return # XXX DISABLED
         route1 = self.routes['3.1-testing']
         route2 = self.routes['3.2-testing']
-        prom = self._makePromoter([route1, route2])
-        prom.add_promotion('foobar')
-        self.assertTrue(('osg-3.1-el5-testing', 'foobar-2000-1.osg31.el5') in prom.tag_pkg_args)
-        self.assertTrue(('osg-3.2-el6-testing', 'foobar-2000-1.osg32.el6') in prom.tag_pkg_args)
+        prom = self._make_promoter([route1, route2])
+        prom.add_promotion('goodpkg-2000-1')
+        for dver in ['el5', 'el6']:
+            for osgver in ['3.1', '3.2']:
+                tag = 'osg-%s-%s-testing' % (osgver, dver)
+                dist = 'osg%s.%s' % (osgver.replace(".", ""), dver)
+                pkg = 'goodpkg-2000-1.%s' % dist
+
+                self.assertTrue(tag in prom.tag_pkg_args)
+                self.assertTrue(pkg in prom.tag_pkg_args[tag])
 
     def test_cross_dist_reject(self):
         return # XXX DISABLED
-        prom = self._makePromoter([self.routes['3.1-testing'], self.routes['3.2-testing']], ['el6'])
+        prom = self._make_promoter([self.routes['3.1-testing'], self.routes['3.2-testing']], ['el6'])
         prom.add_promotion('otherrejectme')
         rejs = prom.get_rejects()
-        self.assertEqual(2, len(rejs))
+        self.assertEqual(2, len(rejs), "Builds with different NVRs between dists did not get properly rejeted")
 
 
 if __name__ == '__main__':
