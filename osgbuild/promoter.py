@@ -2,13 +2,6 @@
 """A package promotion script for OSG"""
 
 
-STATIC_ROUTES = {
-    "hcc": ["hcc-%s-testing", "hcc-%s-release"],
-    "old-upcoming": ["%s-osg-upcoming-development", "%s-osg-upcoming-testing"],
-    "old-testing": ["%s-osg-development", "%s-osg-testing"],
-    "old-contrib": ["%s-osg-testing", "%s-osg-contrib"],
-    "new-upcoming": ["osg-upcoming-%s-development", "osg-upcoming-%s-testing"],
-   }
 
 
 import re
@@ -39,6 +32,26 @@ class KojiTagsAreMessedUp(Exception):
     This can happen if one half of a route does not exist for a given dver
     (e.g. osg-3.1-el5-development exists but not osg-3.1-el5-testing).
     """
+
+
+class Route(object):
+    def __init__(self, from_tag_hint, to_tag_hint, repo):
+        self.from_tag_hint = from_tag_hint
+        self.to_tag_hint = to_tag_hint
+        self.repo = repo
+        # for compatibility:
+        self.listform = [from_tag_hint, to_tag_hint, repo]
+
+    def __getitem__(self, key):
+        return self.listform[key]
+
+STATIC_ROUTES = {
+    "hcc": Route("hcc-%s-testing", "hcc-%s-release", "hcc"),
+    "old-upcoming": Route("%s-osg-upcoming-development", "%s-osg-upcoming-testing", "osg"),
+    "old-testing": Route("%s-osg-development", "%s-osg-testing", "osg"),
+    "old-contrib": Route("%s-osg-testing", "%s-osg-contrib", "osg"),
+    "new-upcoming": Route("osg-upcoming-%s-development", "osg-upcoming-%s-testing", "osg"),
+   }
 
 #
 # Utility functions
@@ -90,7 +103,8 @@ class RouteDiscovery(object):
       * 'osgver' is '3.1', '3.2', etc.
       * a tag_hint is the name of a koji tag with %s where the dver would go,
         e.g. '%s-upcoming-development'
-      * a route is a from_tag_hint, to_tag_hint pair
+      * a 'repo' is the first part of a new-style dist tag, e.g. 'hcc', 'osg31'
+      * a route contains a from_tag_hint, to_tag_hint, and repo
       * a route is valid for a dver if tags exist for both the from_tag and the
         to_tag (obtained by filling in the dver for the tag_hints)
       * a route is valid if it is valid for any dver
@@ -178,13 +192,14 @@ class RouteDiscovery(object):
             devel_tag_hint = "osg-%s-%%s-development" % (osgver)
             contrib_tag_hint = "osg-%s-%%s-contrib" % (osgver)
             testing_tag_hint = "osg-%s-%%s-testing" % (osgver)
+            osgshortver = osgver.replace('.', '')
 
-            potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint),
-                                osgver + "-contrib": (testing_tag_hint, contrib_tag_hint)}
+            potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint, 'osg' + osgshortver),
+                                osgver + "-contrib": (testing_tag_hint, contrib_tag_hint, 'osg' + osgshortver)}
 
             for route_name, route in potential_routes.iteritems():
                 self.validate_route_for_dver(route, dver)
-                valid_versioned_osg_routes[route_name] = route
+                valid_versioned_osg_routes[route_name] = Route(route[0], route[1], route[2])
 
         return valid_versioned_osg_routes
 
@@ -267,7 +282,7 @@ class RouteDiscovery(object):
 
         """
         errors = []
-        for tag_hint in route:
+        for tag_hint in route[0:2]:
             tag = tag_hint % dver
             if tag not in self.tags:
                 errors.append("%s is missing" % tag)
@@ -292,7 +307,7 @@ class Promoter(object):
         """
         self.tag_pkg_args = {}
         self.rejects = []
-        self.from_tag_hint, self.to_tag_hint = route
+        self.from_tag_hint, self.to_tag_hint, self.repo = route
         self.dvers = dvers
         self.kojihelper = kojihelper
 
