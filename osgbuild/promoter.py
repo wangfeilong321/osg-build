@@ -39,9 +39,15 @@ class KojiTagsAreMessedUp(Exception):
 
 
 Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo'])
-BuildBase = namedtuple('BuildBase', ['name', 'version', 'release_no_dist', 'repo', 'dver'])
 
-class Build(BuildBase):
+class Build(object):
+    def __init__(self, name, version, release_no_dist, repo, dver):
+        self.name = name
+        self.version = version
+        self.release_no_dist = release_no_dist
+        self.repo = repo
+        self.dver = dver
+
     @staticmethod
     def new_from_nvr(nvr):
         name, version, release = split_nvr(nvr)
@@ -55,7 +61,7 @@ class Build(BuildBase):
 
     @property
     def vr(self):
-        return '.'.join([self.vr_no_dist, self.repo, self.dver])
+        return '.'.join([self.vr_no_dist, self.dist]).strip('.')
 
     @property
     def nvr(self):
@@ -64,6 +70,10 @@ class Build(BuildBase):
     @property
     def nvr_no_dist(self):
         return '-'.join([self.name, self.vr_no_dist])
+
+    @property
+    def dist(self):
+        return '.'.join([self.repo, self.dver]).strip('.')
 
 
 class Reject(object):
@@ -103,18 +113,6 @@ def split_nvr(build):
         return (match.group('name'), match.group('version'), match.group('release'))
     else:
         return ()
-
-def split_dver(build):
-    """Split out the dver from the NVR of 'build'.
-    For example, split_dver("foobar-1-1.osg.el5") returns
-    ("foobar-1-1.osg", "el5")
-    Return the empty string for the dver if it's not in the NVR.
-
-    """
-    pattern = re.compile(r"\.(el\d+)$")
-    nvr_no_dver = pattern.sub("", build)
-    dver = pattern.search(build)
-    return (nvr_no_dver, dver and dver.group(1) or "")
 
 def split_repo_dver(build):
     """Split out the dist tag from the NVR of a build, returning a tuple
@@ -399,49 +397,7 @@ class Promoter(object):
         else:
             for tag, build in tag_build_pairs:
                 self.tag_pkg_args.setdefault(tag, [])
-                self.tag_pkg_args[tag].append(build.nvr)
-
-    def do_promotions(self, dry_run=False, regen=False):
-        """Tag all builds selected to be tagged in self.tag_pkg_args.
-        self.tag_pkg_args is a list of (tag, [builds]) pairs.
-
-        If dry_run is True, no actual tagging happens.  If
-        regen is True, then each repository that gets modified will be
-        regenerated after all tagging is done.
-
-        Will not attempt to tag builds already in the destination tag.
-
-        Return builds successfully promoted.
-
-        """
-        printf("--- Tagging builds")
-        tasks = dict()
-        for tag, builds in self.tag_pkg_args.items():
-            for build in builds:
-                try:
-                    # Make sure the build isn't already in tag
-                    if build in self.kojihelper.get_tagged_builds(tag):
-                        printf("Skipping %s, already in %s", build, tag)
-                        continue
-                except KeyError:
-                    pass
-
-                build_no_dver, dver = split_dver(build)
-                # Launch the builds
-                if not dry_run:
-                    task_id = self.kojihelper.tag_build(tag, build)
-                    tasks[task_id] = (build_no_dver, dver, build)
-                else:
-                    printf("tagBuild('%s', '%s')", tag, build)
-
-        if not dry_run:
-            promoted_builds = self.watch_builds(tasks)
-
-            if regen:
-                print "--- Regenerating repos"
-                self.kojihelper.regen_repos(tags_to_regen=self.tag_pkg_args.keys())
-
-            return promoted_builds
+                self.tag_pkg_args[tag].append(build)
 
     def _get_build(self, tag_hint, repo, dver, pkg_or_build):
         """Get a single build (as a Build object) out of the tag given by
@@ -537,6 +493,47 @@ class Promoter(object):
     def get_rejects(self):
         return self.rejects
 
+    def do_promotions(self, dry_run=False, regen=False):
+        """Tag all builds selected to be tagged in self.tag_pkg_args.
+        self.tag_pkg_args is a list of (tag, [builds]) pairs.
+
+        If dry_run is True, no actual tagging happens.  If
+        regen is True, then each repository that gets modified will be
+        regenerated after all tagging is done.
+
+        Will not attempt to tag builds already in the destination tag.
+
+        Return builds successfully promoted.
+
+        """
+        printf("--- Tagging builds")
+        tasks = dict()
+        for tag, builds in self.tag_pkg_args.items():
+            for build in builds:
+                try:
+                    # Make sure the build isn't already in tag
+                    if build.nvr in self.kojihelper.get_tagged_builds(tag):
+                        printf("Skipping %s, already in %s", build.nvr, tag)
+                        continue
+                except KeyError:
+                    pass
+
+                # Launch the builds
+                if not dry_run:
+                    task_id = self.kojihelper.tag_build(tag, build.nvr)
+                    tasks[task_id] = build
+                else:
+                    printf("tagBuild('%s', '%s')", tag, build.nvr)
+
+        if not dry_run:
+            promoted_builds = self.watch_builds(tasks)
+
+            if regen:
+                print "--- Regenerating repos"
+                self.kojihelper.regen_repos(tags_to_regen=self.tag_pkg_args.keys())
+
+            return promoted_builds
+
     def watch_builds(self, tasks):
         """Helper for do_promotions(). Watch builds being promoted and return
         successful ones.
@@ -550,12 +547,12 @@ class Promoter(object):
 
         promoted_builds = {}
         for task_id in tasks:
-            build_no_dver, dver, build = tasks[task_id]
+            build = tasks[task_id]
             if self.kojihelper.get_task_state(task_id) == 'CLOSED':
-                promoted_builds.setdefault(build_no_dver, dict())
-                promoted_builds[build_no_dver][dver] = build
+                promoted_builds.setdefault(build.nvr_no_dist, dict())
+                promoted_builds[build.nvr_no_dist][build.dist] = build
             else:
-                printf("* Error promoting build %s", build)
+                printf("* Error promoting build %s", build.nvr)
 
         return promoted_builds
 

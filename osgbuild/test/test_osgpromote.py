@@ -2,6 +2,7 @@
 
 import logging
 import unittest
+import sys
 
 from osgbuild import promoter
 
@@ -54,9 +55,6 @@ class TestUtil(unittest.TestCase):
     buildnvr = "osg-build-1.3.2-1.osg32.el5"
     def test_split_nvr(self):
         self.assertEqual(('osg-build', '1.3.2', '1.osg32.el5'), promoter.split_nvr(self.buildnvr))
-
-    def test_split_dver(self):
-        self.assertEqual(('osg-build-1.3.2-1.osg32', 'el5'), promoter.split_dver(self.buildnvr))
 
     def test_split_repo_dver(self):
         self.assertEqual(('osg-build-1.3.2-1', 'osg32', 'el5'), promoter.split_repo_dver(self.buildnvr))
@@ -141,6 +139,12 @@ class MockKojiHelper(promoter.KojiHelper):
                 'otherrejectme'],
             }
 
+    want_success = True
+
+    def __init__(self, *args):
+        self.newly_tagged_packages = []
+        return super(MockKojiHelper, self).__init__(*args)
+
     def get_tagged_packages(self, tag):
         return self.tagged_packages_by_tag[tag]
 
@@ -152,6 +156,21 @@ class MockKojiHelper(promoter.KojiHelper):
             if build['nvr'].startswith(package+'-') and build['latest']:
                 return build['nvr']
         return None
+
+    def tag_build(self, tag, build):
+        self.newly_tagged_packages.append(build)
+        task_id = len(self.newly_tagged_packages) - 1
+        #sys.stdout.write("%d = tag(%s, %s)\n" % (task_id, tag, build))
+        return task_id
+
+    def watch_tasks(self, a_list):
+        pass
+
+    def get_task_state(self, task_id):
+        if len(self.newly_tagged_packages) > task_id and self.want_success:
+            return 'CLOSED'
+        else:
+            return 'FAILED'
 
 
 class TestPromoter(unittest.TestCase):
@@ -173,38 +192,38 @@ class TestPromoter(unittest.TestCase):
         for dver in self.dvers:
             self.assertTrue(
                 'goodpkg-2000-1.osg32.%s' % dver in
-                self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % dver])
+                [x.nvr for x in self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % dver]])
 
     def test_add_promotion_with_nvr(self):
         self.testing_promoter.add_promotion('goodpkg-2000-1.osg32.el5')
         for dver in self.dvers:
             self.assertTrue(
                 'goodpkg-2000-1.osg32.%s' % dver in
-                self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % dver])
+                [x.nvr for x in self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % dver]])
 
     def test_add_promotion_with_nvr_no_dist(self):
         self.testing_promoter.add_promotion('goodpkg-2000-1')
         for dver in self.dvers:
             self.assertTrue(
                 'goodpkg-2000-1.osg32.%s' % dver in
-                self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % dver])
+                [x.nvr for x in self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % dver]])
 
     def test_reject_add(self):
         self.testing_promoter.add_promotion('goodpkg')
         self.testing_promoter.add_promotion('rejectme')
         self.assertFalse(
             'rejectme-1-1.osg32.el5' in
-            self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el5'])
+            [x.nvr for x in self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el5']])
 
     def test_reject_add_with_ignore(self):
         self.testing_promoter.add_promotion('goodpkg')
         self.testing_promoter.add_promotion('rejectme', ignore_rejects=True)
         self.assertTrue(
             'rejectme-1-1.osg32.el5' in
-            self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el5'])
+            [x.nvr for x in self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el5']])
         self.assertTrue(
             'rejectme-2-1.osg32.el6' in
-            self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el6'])
+            [x.nvr for x in self.testing_promoter.tag_pkg_args[self.testing_route.to_tag_hint % 'el6']])
 
     def test_new_reject(self):
         self.testing_promoter.add_promotion('rejectme')
@@ -225,13 +244,28 @@ class TestPromoter(unittest.TestCase):
                 pkg = 'goodpkg-2000-1.%s' % dist
 
                 self.assertTrue(tag in prom.tag_pkg_args)
-                self.assertTrue(pkg in prom.tag_pkg_args[tag])
+                self.assertTrue(pkg in [x.nvr for x in prom.tag_pkg_args[tag]])
 
     def test_cross_dist_reject(self):
         prom = self._make_promoter([self.routes['3.1-testing'], self.routes['3.2-testing']], ['el6'])
         prom.add_promotion('otherrejectme')
         rejs = prom.get_rejects()
-        self.assertEqual(1, len(rejs), "Builds with different NVRs between dists did not get properly rejeted")
+        self.assertEqual(1, len(rejs))
+
+    def test_do_promotions(self):
+        self.testing_promoter.add_promotion('goodpkg')
+        promoted_builds = self.testing_promoter.do_promotions()
+        self.assertTrue('goodpkg-2000-1' in promoted_builds)
+
+    def test_do_multi_promotions(self):
+        routes = [self.routes['3.1-testing'], self.routes['3.2-testing']]
+        prom = self._make_promoter(routes)
+        prom.add_promotion('goodpkg-2000-1')
+        promoted_builds = prom.do_promotions()
+        self.assertEqual(4, len(self.kojihelper.newly_tagged_packages))
+        self.assertTrue('goodpkg-2000-1' in promoted_builds)
+        self.assertEqual(4, len(promoted_builds['goodpkg-2000-1']))
+
 
 
 if __name__ == '__main__':
