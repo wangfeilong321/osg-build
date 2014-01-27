@@ -387,15 +387,19 @@ class Promoter(object):
         should be added to that tag.
 
         """
+        tag_build_pairs = []
         for route in self.routes:
             builds = self.get_builds(route, self.dvers, pkg_or_build, ignore_rejects)
-            checked_builds = self.check_distinct_dists(pkg_or_build, builds, self.dvers, ignore_rejects)
-            for dver in checked_builds:
+            for dver in builds:
                 to_tag = route.to_tag_hint % dver
+                tag_build_pairs.append((to_tag, builds[dver]))
 
-                build = checked_builds[dver]
-                self.tag_pkg_args.setdefault(to_tag, [])
-                self.tag_pkg_args[to_tag].append(build.nvr)
+        if not ignore_rejects and self.any_distinct_across_dists(tag_build_pairs):
+            self.rejects.append(Reject(pkg_or_build, None, Reject.REASON_DISTINCT_ACROSS_DISTS))
+        else:
+            for tag, build in tag_build_pairs:
+                self.tag_pkg_args.setdefault(tag, [])
+                self.tag_pkg_args[tag].append(build.nvr)
 
     def do_promotions(self, dry_run=False, regen=False):
         """Tag all builds selected to be tagged in self.tag_pkg_args.
@@ -484,6 +488,10 @@ class Promoter(object):
         empty dict is returned.
 
         """
+        # TODO Both this and add_promotion currently handle rejections.
+        # I think this should be refactored such that: get_builds goes through
+        # all routes, not just one, and rejection handling should be done in
+        # add_promotion.
         tag_hint = route.from_tag_hint
         repo = route.repo
         builds = {}
@@ -501,16 +509,11 @@ class Promoter(object):
 
         return builds
 
-    def check_distinct_dists(self, pkg_or_build, builds, dvers, ignore_rejects=False):
-        # find builds where the VERSION-RELEASEs (without dist tag) are distinct
-        # between the dvers we are running the script for, and reject them.
-        # TODO Does not check if the VRs differ across the dists yet
-        vrs_no_dist = [builds[dver].vr_no_dist for dver in builds]
-        if len(set(vrs_no_dist)) > 1:
-            if not ignore_rejects:
-                self.rejects.append(Reject(pkg_or_build, None, Reject.REASON_DISTINCT_ACROSS_DISTS))
-                return {}
-        return builds
+    def any_distinct_across_dists(self, tag_build_pairs):
+        distinct_nvrs = set()
+        for tag, build in tag_build_pairs:
+            distinct_nvrs.add(build.nvr_no_dist)
+        return len(distinct_nvrs) > 1
 
     def _get_valid_tag_for_dver(self, tag_hint, dver):
         """Find tag_hint % dver in koji's list of tags (as queried via

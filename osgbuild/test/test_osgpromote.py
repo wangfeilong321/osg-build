@@ -228,11 +228,10 @@ class TestPromoter(unittest.TestCase):
                 self.assertTrue(pkg in prom.tag_pkg_args[tag])
 
     def test_cross_dist_reject(self):
-        return # XXX DISABLED
         prom = self._make_promoter([self.routes['3.1-testing'], self.routes['3.2-testing']], ['el6'])
         prom.add_promotion('otherrejectme')
         rejs = prom.get_rejects()
-        self.assertEqual(2, len(rejs), "Builds with different NVRs between dists did not get properly rejeted")
+        self.assertEqual(1, len(rejs), "Builds with different NVRs between dists did not get properly rejeted")
 
 
 if __name__ == '__main__':
