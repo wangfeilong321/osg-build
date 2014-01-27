@@ -1,5 +1,6 @@
 # from: http://code.activestate.com/recipes/500261/
 # now included in python 2.6
+# pylint: disable-all
 from operator import itemgetter as _itemgetter
 from keyword import iskeyword as _iskeyword
 import sys as _sys
@@ -118,7 +119,6 @@ def namedtuple(typename, field_names, verbose=False, rename=False):
 
 
 
-# pylint: disable=E0102, E1101
 if __name__ == '__main__':
     # verify that instances can be pickled
     from cPickle import loads, dumps
