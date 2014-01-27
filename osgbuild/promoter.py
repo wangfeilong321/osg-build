@@ -39,18 +39,43 @@ class KojiTagsAreMessedUp(Exception):
 
 
 Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo'])
+BuildBase = namedtuple('BuildBase', ['name', 'version', 'release_no_dist', 'repo', 'dver'])
+
+class Build(BuildBase):
+    @staticmethod
+    def new_from_nvr(nvr):
+        name, version, release = split_nvr(nvr)
+        release_no_dist, repo, dver = split_repo_dver(release)
+
+        return Build(name, version, release_no_dist, repo, dver)
+
+    @property
+    def vr_no_dist(self):
+        return '-'.join([self.version, self.release_no_dist])
+
+    @property
+    def vr(self):
+        return '.'.join([self.vr_no_dist, self.repo, self.dver])
+
+    @property
+    def nvr(self):
+        return '-'.join([self.name, self.vr])
+
+    @property
+    def nvr_no_dist(self):
+        return '-'.join([self.name, self.vr_no_dist])
 
 
 class Reject(object):
-    REASON_NOMATCHING_FOR_DVER = "No build matching %(pkg_or_build)s for dver %(dver)s"
-    REASON_DISTINCT_ACROSS_DVERS = "Build versions matching %(pkg_or_build)s distinct across dvers"
-    def __init__(self, pkg_or_build, dver, reason):
+    REASON_DISTINCT_ACROSS_DISTS = "Build versions matching %(pkg_or_build)s distinct across dist tags"
+    REASON_NOMATCHING_FOR_DIST = "No build matching %(pkg_or_build)s for dist %(dist)s"
+    def __init__(self, pkg_or_build, dist, reason):
         self.pkg_or_build = pkg_or_build
-        self.dver = dver
+        self.dist = dist
         self.reason = reason
 
     def str(self):
-        return self.reason % {'pkg_or_build': self.pkg_or_build, 'dver': self.dver}
+        return self.reason % {'pkg_or_build': self.pkg_or_build, 'dist': self.dist}
 
 STATIC_ROUTES = {
     "hcc": Route("hcc-%s-testing", "hcc-%s-release", "hcc"),
@@ -90,10 +115,6 @@ def split_dver(build):
     nvr_no_dver = pattern.sub("", build)
     dver = pattern.search(build)
     return (nvr_no_dver, dver and dver.group(1) or "")
-
-def trim_dver(build):
-    """Remove the dver from the NVR of 'build'"""
-    return split_dver(build)[0]
 
 def split_repo_dver(build):
     """Split out the dist tag from the NVR of a build, returning a tuple
@@ -176,7 +197,7 @@ class RouteDiscovery(object):
         """
         dvers_for_routes = {}
         to_remove = []
-        for route_name, route in routes.iteritems():
+        for route_name, route in routes.items():
             dvers = self.get_dvers_for_route(route)
             if not dvers:
                 to_remove.append(route_name)
@@ -238,7 +259,7 @@ class RouteDiscovery(object):
             potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint, 'osg' + osgshortver),
                                 osgver + "-contrib": (testing_tag_hint, contrib_tag_hint, 'osg' + osgshortver)}
 
-            for route_name, route in potential_routes.iteritems():
+            for route_name, route in potential_routes.items():
                 self.validate_route_for_dver(route, dver)
                 valid_versioned_osg_routes[route_name] = Route(route[0], route[1], route[2])
 
@@ -361,13 +382,14 @@ class Promoter(object):
         should be added to that tag.
 
         """
-        builds = self.get_builds(self.from_tag_hint, self.dvers, pkg_or_build, ignore_rejects=ignore_rejects)
-        for dver in builds:
+        builds = self.get_builds(self.from_tag_hint, self.repo, self.dvers, pkg_or_build, ignore_rejects)
+        checked_builds = self.check_distinct_dists(pkg_or_build, builds, self.dvers, ignore_rejects)
+        for dver in checked_builds:
             to_tag = self.get_to_tag_for_dver(dver)
 
-            build = builds[dver]
+            build = checked_builds[dver]
             self.tag_pkg_args.setdefault(to_tag, [])
-            self.tag_pkg_args[to_tag].append(build)
+            self.tag_pkg_args[to_tag].append(build.nvr)
 
     def do_promotions(self, dry_run=False, regen=False):
         """Tag all builds selected to be tagged in self.tag_pkg_args.
@@ -384,7 +406,7 @@ class Promoter(object):
         """
         printf("--- Tagging builds")
         tasks = dict()
-        for tag, builds in self.tag_pkg_args.iteritems():
+        for tag, builds in self.tag_pkg_args.items():
             for build in builds:
                 try:
                     # Make sure the build isn't already in tag
@@ -411,67 +433,77 @@ class Promoter(object):
 
             return promoted_builds
 
-    def get_builds(self, tag_hint, dvers, pkg_or_build, ignore_rejects=False):
-        """Get a dict of builds keyed by dver for pkg_or_build.
-        If pkg_or_build is a package, then it gets the latest version of the
-        package in tag_hint % dver.
-        If pkg_or_build is a build, then it uses that specific version.
-        Note that latest is defined as the build most recently tagged into
-        tag_hint % dver, NOT the newest version.
+    def _get_build(self, tag_hint, repo, dver, pkg_or_build):
+        """Get a single build (as a Build object) out of the tag given by
+        tag_hint % dver that matches pkg_or_build. This only returns builds
+        where the Release field contains a dist tag with both a repo and a dver
+        (e.g. osg31.el5).
 
-        If ignore_rejects is False, then it can reject packages if
-        either of the following apply:
-        * pkg_or_build is a build and a build with that NVR is missing from
-          at least one dver. (For example, pkg_or_build is foobar-1-1.osg.el5,
-          and foobar-1-1.osg.el5 exists but foobar-1-1.osg.el6 doesn't).
-        * pkg_or_build is a package and the NVRs of the latest version of that
-          package are different across NVRs. (For example, pkg_or_build is
-          foobar, el5 has foobar-1-1.osg.el5, and el6 has foobar-1-2.osg.el6).
-        In either of those cases, neither the el5 or the el6 builds should be
-        promoted.
+        If given a build where the dist tag does not match the repo and/or
+        dver, will strip off the dist tag, put on the one that is appropriate
+        for the repo and dver, and return _that_ build.
+
+        If given a package (i.e. just a name and not an NVR, then the latest
+        build for the tag is returned (latest meaning most recently added to
+        that tag)).
+
+        Return None if no matching build was found.
+
+        """
+        tag = self._get_valid_tag_for_dver(tag_hint, dver)
+        pkg_or_build_no_dist = split_repo_dver(pkg_or_build)[0]
+        # Case 1: pkg_or_build is a build, in which case take off its dist tag
+        # and put the dist tag specified dist tag on, then find a build for that.
+        build_nvr_1 = self.kojihelper.get_build_in_tag(tag, ".".join([pkg_or_build_no_dist, repo, dver]))
+        # Case 2: pkg_or_build is a package, in which case putting a dist tag
+        # on doesn't help--just find the latest build in the tag.
+        build_nvr_2 = self.kojihelper.get_build_in_tag(tag, pkg_or_build_no_dist)
+
+        build_nvr = build_nvr_1 or build_nvr_2 or None
+
+        if build_nvr:
+            build_obj = Build.new_from_nvr(build_nvr)
+            return build_obj
+
+    def get_builds(self, tag_hint, repo, dvers, pkg_or_build, ignore_rejects=False):
+        """Get a dict of builds keyed by dver for pkg_or_build.
+        Uses _get_build to get the build matching pkg_or_build for the given
+        repo and all given dvers.
+
+        If matching builds are found for one but not all dvers then all builds
+        will be rejected, unless ignore_rejects is True. Rejections are added
+        to self.rejects.
 
         In case of a rejection (or no matching packages found at all), an
         empty dict is returned.
+
         """
         builds = {}
         # Find each build for all dvers matching pkg_or_build
         for dver in dvers:
-            tag = self.get_valid_tag_for_dver(tag_hint, dver)
-
-            pkg_or_build_no_dver = trim_dver(pkg_or_build)
-            # Case 1: pkg_or_build is a build, in which case take off its dver
-            # and put the current dver on, then find a build for that.
-            build1 = self.kojihelper.get_build_in_tag(tag, "%s.%s" % (pkg_or_build_no_dver, dver))
-            # Case 2: pkg_or_build is a package, in which case putting a dver
-            # on doesn't help--just find the latest build in the tag.
-            build2 = self.kojihelper.get_build_in_tag(tag, pkg_or_build_no_dver)
-
-            build = build1 or build2
+            dist = "%s.%s" % (repo, dver)
+            build = self._get_build(tag_hint, repo, dver, pkg_or_build)
             if not build:
-                log.warning("There is no build matching %s for dver %s.", pkg_or_build, dver)
                 if not ignore_rejects:
-                    log.warning("Rejected package.")
-                    self.rejects.append(Reject(pkg_or_build, dver, Reject.REASON_NOMATCHING_FOR_DVER))
+                    self.rejects.append(Reject(pkg_or_build, dist, Reject.REASON_NOMATCHING_FOR_DIST))
                     return {}
                 else:
                     continue
             builds[dver] = build
 
-        if len(builds) == 0:
-            return {}
+        return builds
+
+    def check_distinct_dists(self, pkg_or_build, builds, dvers, ignore_rejects=False):
         # find builds where the VERSION-RELEASEs (without dver) are distinct
         # between the dvers we are running the script for, and reject them.
-        vrs = ['-'.join(split_nvr(builds[x])[1:]) for x in builds]
-        vrs_no_dver = [trim_dver(x) for x in vrs]
-        if len(set(vrs_no_dver)) > 1:
-            log.warning("The versions of the builds matching %s are distinct across dvers.", pkg_or_build)
+        vrs_no_dist = [builds[dver].vr_no_dist for dver in builds]
+        if len(set(vrs_no_dist)) > 1:
             if not ignore_rejects:
-                log.warning("Rejected package.")
-                self.rejects.append(Reject(pkg_or_build, dver, Reject.REASON_DISTINCT_ACROSS_DVERS))
+                self.rejects.append(Reject(pkg_or_build, None, Reject.REASON_DISTINCT_ACROSS_DISTS))
                 return {}
         return builds
 
-    def get_valid_tag_for_dver(self, tag_hint, dver):
+    def _get_valid_tag_for_dver(self, tag_hint, dver):
         """Find tag_hint % dver in koji's list of tags (as queried via
         kojihelper). Return the tag if found; raise KojiTagsAreMessedUp if
         not.
@@ -485,15 +517,10 @@ class Promoter(object):
             raise KojiTagsAreMessedUp("Can't find tag %s in koji" % tag)
         return tag
 
-    def get_from_tag_for_dver(self, dver):
-        """Convenience function to get the actual tag we will tag a build from
-        given the dver."""
-        return self.get_valid_tag_for_dver(self.from_tag_hint, dver)
-
     def get_to_tag_for_dver(self, dver):
         """Convenience function to get the actual tag we will tag a build into
         given the dver."""
-        return self.get_valid_tag_for_dver(self.to_tag_hint, dver)
+        return self._get_valid_tag_for_dver(self.to_tag_hint, dver)
 
     def get_rejects(self):
         return self.rejects
