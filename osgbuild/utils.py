@@ -161,7 +161,7 @@ def atomic_unslurp(filename, contents, mode=0644):
             os.write(fd, contents)
         finally:
             os.close(fd)
-    except:
+    except EnvironmentError:
         os.unlink(tempname)
         raise
     os.rename(tempname, filename)
