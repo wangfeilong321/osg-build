@@ -91,7 +91,7 @@ STATIC_ROUTES = {
     "hcc": Route("hcc-%s-testing", "hcc-%s-release", "hcc"),
     "old-upcoming": Route("%s-osg-upcoming-development", "%s-osg-upcoming-testing", "osg"),
     "old-testing": Route("%s-osg-development", "%s-osg-testing", "osg"),
-    "old-contrib": Route("%s-osg-testing", "%s-osg-contrib", "osg"),
+    "old-contrib": Route("%s-osg-development", "%s-osg-contrib", "osg"),
     "new-upcoming": Route("osg-upcoming-%s-development", "osg-upcoming-%s-testing", "osgup"),
    }
 
@@ -255,7 +255,7 @@ class RouteDiscovery(object):
             osgshortver = osgver.replace('.', '')
 
             potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint, 'osg' + osgshortver),
-                                osgver + "-contrib": (testing_tag_hint, contrib_tag_hint, 'osg' + osgshortver)}
+                                osgver + "-contrib": (devel_tag_hint, contrib_tag_hint, 'osg' + osgshortver)}
 
             for route_name, route in potential_routes.items():
                 self.validate_route_for_dver(route, dver)
