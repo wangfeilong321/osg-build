@@ -24,7 +24,6 @@ from osgbuild.utils import (
     checked_call,
     CalledProcessError,
     find_file,
-    printf,
     errprintf)
 
 TRUNK = "native/redhat/trunk"
@@ -357,7 +356,7 @@ class TestKoji(XTestCase):
         output = backtick_osg_build(self.kdr_lib + ["--scratch", self.pkg_dir])
         out_list = output.split("\n")
         self.assertTrue(
-            regex_in_list(r".*kojisession.build\([^,]+?, 'osg-el[56]', " + re.escape("{'scratch': True}") + ", None\)", out_list))
+            regex_in_list(r".*kojisession.build\([^,]+?, 'osg-el[56]', " + re.escape("{'scratch': True}") + r", None\)", out_list))
 
     def test_koji_lib_upcoming(self):
         output = backtick_osg_build(self.kdr_lib + ["--upcoming", "--scratch", self.pkg_dir])
@@ -384,7 +383,7 @@ class TestKoji(XTestCase):
 
     def test_verify_correct_branch(self):
         try:
-            output = backtick_osg_build(self.kdr_lib + ["--upcoming", "--dry-run", opj(SVN_ROOT, 'native/redhat/trunk/koji')])
+            _ = backtick_osg_build(self.kdr_lib + ["--upcoming", "--dry-run", opj(SVN_ROOT, 'native/redhat/trunk/koji')])
         except CalledProcessError, err:
             out_list = err.output.split("\n")
             self.assertTrue(

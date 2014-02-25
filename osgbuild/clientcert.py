@@ -15,6 +15,8 @@ class ClientCert(object):
         if not os.path.exists(self.filename):
             raise ClientCertError(self.filename, "file not found")
 
+        self.enddate = None
+        self.first_commonname = None
         self.do_openssl_lookup()
         self.check_expired()
 

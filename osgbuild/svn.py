@@ -188,7 +188,7 @@ def koji(package_dir, koji_obj, buildopts):
     """koji task with an svn build."""
     package_info = get_package_info(package_dir)
     package_name = os.path.basename(package_info['canon_url'])
-    if not re.match("\w+", package_name): # sanity check
+    if not re.match(r"\w+", package_name): # sanity check
         raise Error("Package directory '%s' gives invalid package name '%s'" % (package_dir, package_name))
     if not verify_package_info(package_info):
         raise UsageError("%s isn't a package directory "

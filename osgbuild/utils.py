@@ -17,6 +17,7 @@ class CalledProcessError(Exception):
 
     """
     def __init__(self, process, returncode, output=None):
+        super(CalledProcessError, self).__init__()
         self.process = process
         self.returncode = returncode
         self.output = output
@@ -270,7 +271,7 @@ def which(program):
     def is_exe(fpath):
         "is a regular file and is executable"
         return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
-    fpath, fname = os.path.split(program)
+    fpath, _ = os.path.split(program)
     if fpath:
         if is_exe(program):
             return program
@@ -287,15 +288,15 @@ def printf(fstring, *args, **kwargs):
     """A shorthand for printing with a format string.
     The kwargs 'file' and 'end' are as in the Python3 print function.
     """
-    file = kwargs.pop('file', sys.stdout)
+    file_ = kwargs.pop('file', sys.stdout)
     end = kwargs.pop('end', "\n")
     ffstring = fstring + end
     if len(args) == 0 and len(kwargs) > 0:
-        file.write(ffstring % kwargs)
+        file_.write(ffstring % kwargs)
     elif len(args) == 1 and type(args[0]) == dict:
-        file.write(ffstring % args[0])
+        file_.write(ffstring % args[0])
     else:
-        file.write(ffstring % args)
+        file_.write(ffstring % args)
 
 def errprintf(fstring, *args, **kwargs):
     """printf to stderr"""
@@ -334,7 +335,7 @@ def get_screen_columns():
     if not screen_columns:
         try:
             screen_columns = int(backtick("stty size").split()[1])
-        except:
+        except TypeError:
             screen_columns = 80
     return screen_columns
 
@@ -360,7 +361,7 @@ except ImportError:
         iterators = [itertools.chain(it, sentinel(), fillers) for it in args]
         try:
             while iterators:
-                yield tuple(map(lambda x:x.next(), iterators))
+                yield tuple(map(lambda x:x.next(), iterators)) # disable deprecated-lambda check: pylint:disable=W0110
                 # ^ the 'next' builtin is not in 2.4
         except ZipExhausted:
             pass

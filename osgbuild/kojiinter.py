@@ -530,7 +530,7 @@ class KojiLibInter(object):
         if not self.dry_run:
             return self.kojisession.newRepo(tag)
         else:
-            log.info("self.kojisession.newRepo(%r)" % tag)
+            log.info("self.kojisession.newRepo(%r)", tag)
 
 
     @koji_error_wrap('watching tasks')

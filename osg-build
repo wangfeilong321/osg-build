@@ -3,7 +3,6 @@
 # pylint: disable=C0103
 import os
 import sys
-import logging
 import traceback
 
 from osgbuild import main

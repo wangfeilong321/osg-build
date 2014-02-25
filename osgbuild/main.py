@@ -185,7 +185,7 @@ def valid_koji_targets():
     """Return a list of valid koji targets (to be used for building up the list
     of values for the --repo argument).
     """
-    global __koji_targets_cache
+    global __koji_targets_cache # pylint:disable=W0603
     if not __koji_targets_cache:
         # HACK
         try:
@@ -227,7 +227,7 @@ def repo_hints(targets):
     valid_koji_targets().
 
     """
-    global __repo_hints_cache
+    global __repo_hints_cache # pylint:disable=W0603
 
     if not __repo_hints_cache:
         __repo_hints_cache = REPO_HINTS_STATIC.copy()
@@ -484,7 +484,7 @@ def target_for_repo_hint(repo_hint, dver):
 def tag_for_repo_hint(repo_hint, dver):
     return repo_hints(valid_koji_targets())[repo_hint]['tag'] % dver
 
-def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
+def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs): # unused-args: pylint:disable=W0613
     """Handle options in the 'targetopts_by_dver' set, such as --koji-tag,
     --redhat-release, etc.
 
@@ -718,7 +718,7 @@ def print_version_and_exit():
     sys.exit(0)
 
 
-def all(iterable):
+def all(iterable): # disable "redefined-builtin" check: pylint: disable=W0622
     """Return True if all elements of the iterable are true (or if it's empty).
     This is a builtin in Python 2.5+, but doesn't exist in 2.4.
 

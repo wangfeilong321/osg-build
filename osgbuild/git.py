@@ -315,7 +315,7 @@ def koji(package_dir, koji_obj, buildopts):
     package_dir = os.path.abspath(package_dir)
     verify_package_dir(package_dir)
     package_name = os.path.basename(package_dir)
-    if not re.match("\w+", package_name): # sanity check
+    if not re.match(r"\w+", package_name): # sanity check
         raise Error("Package directory '%s' gives invalid package name '%s'" % (package_dir, package_name))
     if not buildopts.get('scratch'):
         koji_obj.add_pkg(package_name)

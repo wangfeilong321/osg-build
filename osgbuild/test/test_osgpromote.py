@@ -2,7 +2,6 @@
 
 import logging
 import unittest
-import sys
 import StringIO
 
 from osgbuild import promoter
@@ -162,7 +161,7 @@ class MockKojiHelper(promoter.KojiHelper):
     def koji_get_build(self, build_nvr):
         return {'id': 319}
 
-    def tag_build(self, tag, build):
+    def tag_build(self, tag, build, force=False):
         self.newly_tagged_packages.append(build)
         task_id = len(self.newly_tagged_packages) - 1
         #sys.stdout.write("%d = tag(%s, %s)\n" % (task_id, tag, build))

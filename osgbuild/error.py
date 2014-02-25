@@ -1,7 +1,6 @@
 """Exception classes for osg-build"""
 # pylint: disable=C0103,C0111
 import os
-import re
 import traceback
 
 class Error(Exception):

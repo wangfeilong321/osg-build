@@ -31,7 +31,7 @@ class SRPMBuild(object):
 
         self.abs_package_dir = os.path.abspath(self.package_dir)
         self.package_name = os.path.basename(self.abs_package_dir)
-        if not re.match("\w+", self.package_name): # sanity check
+        if not re.match(r"\w+", self.package_name): # sanity check
             raise Error("Package directory '%s' gives invalid package name '%s'" %
                         (self.abs_package_dir, self.package_name))
         # Unless working_directory is '.', i.e. we want to put the wd's in

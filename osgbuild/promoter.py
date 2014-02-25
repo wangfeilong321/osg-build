@@ -5,7 +5,6 @@
 
 import re
 import sys
-import time
 import logging
 
 from osgbuild import constants
@@ -113,7 +112,7 @@ def split_nvr(build):
     if match:
         return (match.group('name'), match.group('version'), match.group('release'))
     else:
-        return ()
+        return ('', '', '')
 
 def split_repo_dver(build):
     """Split out the dist tag from the NVR of a build, returning a tuple
@@ -329,7 +328,7 @@ class RouteDiscovery(object):
         def _cmp_version(a, b): # pylint: disable=C0103,C0111
             return cmp(a.split('.'), b.split('.'))
 
-        pattern = re.compile("(\d+\.\d+)-%s" % route_base)
+        pattern = re.compile(r"(\d+\.\d+)-%s" % route_base)
         osgvers_for_route_base = [pattern.match(x).group(1) for x in valid_osg_routes if pattern.match(x)]
         if osgvers_for_route_base:
             highest_osgver = sorted(osgvers_for_route_base, cmp=_cmp_version)[-1]
@@ -467,7 +466,7 @@ class Promoter(object):
 
     def any_distinct_across_dists(self, tag_build_pairs):
         distinct_nvrs = set()
-        for tag, build in tag_build_pairs:
+        for _, build in tag_build_pairs:
             distinct_nvrs.add(build.nvr_no_dist)
         return len(distinct_nvrs) > 1
 
@@ -563,7 +562,7 @@ class KojiHelper(kojiinter.KojiLibInter):
 
     def get_all_dvers(self):
         """Return all possible dvers supported by any tag (as a list)"""
-        pat = re.compile("(?:\b|^)(el\d+)")
+        pat = re.compile(r"(?:\b|^)(el\d+)")
         dvers = set()
         for tag in self.get_tags():
             match = pat.search(tag)
