@@ -376,7 +376,7 @@ def print_table(columns_by_header):
         columns.append([entry, '---'] + sorted(columns_by_header[entry]))
     for columns_in_row in izip_longest(fillvalue='', *columns):
         for col in columns_in_row:
-            printf("%-*s", field_width, col, end='')
+            printf("%-*s", field_width - 1, col, end=' ')
         printf("")
 
 
