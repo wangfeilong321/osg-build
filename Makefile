@@ -1,4 +1,4 @@
-VERSION = 1.3.3
+VERSION = 1.3.4
 NAME = osg-build
 NAME_VERSION = $(NAME)-$(VERSION)
 PYDIR = osgbuild
