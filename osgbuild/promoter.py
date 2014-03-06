@@ -149,7 +149,7 @@ def split_repo_dver(build):
 
     return (build_no_dist, repo, dver)
 
-
+
 class RouteDiscovery(object):
     """For discovering and validating promotion routes.
     In addition to including the predefined routes (from STATIC_ROUTES),
@@ -353,7 +353,7 @@ class RouteDiscovery(object):
         """See validate_route_for_dver; 'route_name' is a key in the 'routes' dict."""
         return self.validate_route_for_dver(self.routes[route_name], dver)
 
-
+
 class Promoter(object):
     """For promoting sets of packages.
     Usage is to add packages or builds via add_promotion and then call
@@ -546,7 +546,7 @@ class Promoter(object):
 
         return promoted_builds
 
-
+
 # don't care if it has too many methods: pylint: disable=R0904
 class KojiHelper(kojiinter.KojiLibInter):
     """Extra utility functions for dealing with Koji"""
@@ -649,7 +649,7 @@ class KojiHelper(kojiinter.KojiLibInter):
             self.watch_tasks([self.regen_repo(tag)])
 
 
-
+
 #
 # JIRA writing
 #
@@ -678,7 +678,7 @@ def write_jira(kojihelper, promoted_builds, routes, out=None):
 
 def parse_cmdline_args(all_dvers, valid_routes, argv):
     """Return a tuple of (options, positional args)"""
-    helpstring = "%prog [-r|--route ROUTE...] [options] <packages or builds>"
+    helpstring = "%prog [-r|--route ROUTE]... [options] <packages or builds>"
     helpstring += "\n\nValid routes are:\n"
     for route in sorted(valid_routes.keys()):
         helpstring += " - %-14s: %-30s -> %s\n" % (
@@ -688,7 +688,8 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
 
     parser.add_option("-r", "--route", dest="routes", action="append",
                       help="The promotion route to use. May be specified multiple times."
-                      "If not specified, will use the %r route." % DEFAULT_ROUTE)
+                      "If not specified, will use the %r route. Multiple routes may also "
+                      "be separated by commas." % DEFAULT_ROUTE)
     parser.add_option("-n", "--dry-run", action="store_true", default=False,
                       help="Do not promote, just show what would be done")
     parser.add_option("--ignore-rejects", dest="ignore_rejects", action="store_true", default=False,
@@ -715,13 +716,19 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
 
     matched_routes = []
     if options.routes:
-        # User is allowed to specify the shortest unambiguous prefix of a route
+        expanded_routes = []
         for route in options.routes:
+            if route.find(',') != -1: # We have a comma -- this means multiple routes.
+                expanded_routes.extend(route.split(','))
+            else:
+                expanded_routes.append(route)
+        # User is allowed to specify the shortest unambiguous prefix of a route
+        for route in expanded_routes:
             matching_routes = [x for x in valid_routes.keys() if x.startswith(route)]
             if len(matching_routes) > 1:
-                parser.error("Ambiguous route. Matching routes are: " + ", ".join(matching_routes))
+                parser.error("Ambiguous route %r. Matching routes are: %s" % (route, ", ".join(matching_routes)))
             elif not matching_routes:
-                parser.error("Invalid route. Valid routes are: " + ", ".join(valid_routes.keys()))
+                parser.error("Invalid route %r. Valid routes are: %s" % (route, ", ".join(valid_routes.keys())))
             else:
                 matched_routes.append(matching_routes[0])
     else:
