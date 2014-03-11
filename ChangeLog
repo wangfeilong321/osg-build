@@ -1,5 +1,6 @@
 - Allow multiple routes separated by commas in '-r', for osg-promote
   and fix usage message (SOFTWARE-1390)
+- Add repo hints for condor and perfsonar repos (SOFTWARE-1413, SOFTWARE-1392)
 
 * Tue Feb 25 2014 Carl Edquist <edquist@cs.wisc.edu> - 1.3.4
 - change 'contrib' promotion path to go from development -> contrib instead

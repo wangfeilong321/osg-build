@@ -107,7 +107,9 @@ REPO_HINTS_STATIC = {
     'new-upcoming': {'target': 'osg-upcoming-el%s', 'tag': 'osg-el%s'},
     'internal': {'target': 'osg-el%s-internal', 'tag': 'osg-el%s'},
     'hcc': {'target': 'hcc-el%s', 'tag': 'hcc-el%s'},
-    'uscms': {'target': 'uscms-el%s', 'tag': 'uscms-el%s'}
+    'uscms': {'target': 'uscms-el%s', 'tag': 'uscms-el%s'},
+    'condor': {'target': 'condor-el%s', 'tag': 'condor-el%s'},
+    'perfsonar': {'target': 'perfsonar-el%s', 'tag': 'perfsonar-el%s'},
 }
 
 DVERS = DEFAULT_BUILDOPTS_BY_DVER.keys()
