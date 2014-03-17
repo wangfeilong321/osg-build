@@ -17,7 +17,11 @@ def is_git(package_dir):
     # TODO: Allow specifying a git URL to build from.
     pwd = os.getcwd()
     try:
-        os.chdir(package_dir)
+        try:
+            os.chdir(package_dir)
+        except OSError, ose:
+            if ose.errno == errno.ENOENT:
+                raise Error("%s is not a valid package directory\n(%s)" % (package_dir, ose))
         command = ["git", "status", "--porcelain"]
         try:
             err = utils.sbacktick(command, clocale=True, err2out=True)[1]
