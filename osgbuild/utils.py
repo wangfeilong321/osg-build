@@ -380,3 +380,6 @@ def print_table(columns_by_header):
         printf("")
 
 
+def is_url(location):
+    return re.match(r'[-a-z+]+://', location)
+

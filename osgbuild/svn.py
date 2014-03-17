@@ -8,7 +8,9 @@ from osgbuild import utils
 
 def is_uncommitted(package_dir):
     """Return True if there are uncommitted changes in the SVN working dir."""
-    out, err = utils.sbacktick("svn status -q " + package_dir)
+    if utils.is_url(package_dir):
+        return False
+    out, err = utils.sbacktick("svn status -q " + package_dir, err2out=True)
     if err:
         raise SVNError("Exit code %d getting SVN status. Output:\n%s" % (err, out))
     if out:
@@ -24,6 +26,8 @@ def is_outdated(package_dir):
     SVN working dir.
 
     """
+    if utils.is_url(package_dir):
+        return False
     out, err = utils.sbacktick("svn status -u -q " + package_dir)
     if err:
         raise SVNError("Exit code %d getting SVN status. Output:\n%s" % (err, out))
@@ -149,7 +153,8 @@ def verify_correct_branch(package_dir, buildopts):
     url = package_info['canon_url']
     branch_match = re.search(SVN_REDHAT_PATH + r'/(trunk|branches/[^/]+)/', url)
     if not branch_match:
-        # Building from a weird path (such as a tag). Be permissive -- koji will catch building from outside SVN
+        # Building from a weird path (such as a tag). Be permissive -- koji
+        # itself will catch building from outside SVN so we don't have to
         return
     branch = branch_match.group(1)
     if not is_restricted_branch(branch):
@@ -164,13 +169,9 @@ def verify_correct_branch(package_dir, buildopts):
             raise SVNError("Forbidden to build from %s branch into %s target" % (branch, target))
 
 
-def get_package_info(package_dir, rev=None):
+def get_package_info(package_dir):
     """Return the svn info for a package dir."""
     command = ["svn", "info", package_dir]
-    if rev:
-        command += ["-r", rev]
-    else:
-        command += ["-r", "HEAD"]
 
     out, err = utils.sbacktick(command, clocale=True, err2out=True)
     if err:
