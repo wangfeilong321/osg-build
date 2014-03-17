@@ -3,6 +3,8 @@
 - Add repo hints for condor and perfsonar repos (SOFTWARE-1413, SOFTWARE-1392)
 - Fix SVN URL handling so that you can specify an SVN URL to build from
   instead of a package directory (SOFTWARE-1278)
+- Fix osg-promote misdetecting repo tag on packages with a dot in the release
+  number (e.g. 1.11) (SOFTWARE-1420)
 
 * Tue Feb 25 2014 Carl Edquist <edquist@cs.wisc.edu> - 1.3.4
 - change 'contrib' promotion path to go from development -> contrib instead

@@ -128,6 +128,7 @@ def split_repo_dver(build):
             handled, but it's not worth the extra code)
         2. If the dver is in the release, it is at the end of the dist tag.
         3. The dist tag contains at most 2 components, separated by '.'
+        4. The repo component of a dist tag must start with [a-z].
 
     """
     build_no_dist = build
@@ -135,9 +136,9 @@ def split_repo_dver(build):
     dver = ""
 
     # order matters since later patterns are less specific and would match more
-    pat_1_repo_and_dver = re.compile(r"(?P<build_no_dist>.+)\.(?P<repo>\w+)\.(?P<dver>el\d+)$")
+    pat_1_repo_and_dver = re.compile(r"(?P<build_no_dist>.+)\.(?P<repo>[a-z]\w+)\.(?P<dver>el\d+)$")
     pat_2_dver_only = re.compile(r"(?P<build_no_dist>.+)\.(?P<dver>el\d+)$")
-    pat_3_repo_only = re.compile(r"(?P<build_no_dist>.+)\.(?P<repo>\w+)$")
+    pat_3_repo_only = re.compile(r"(?P<build_no_dist>.+)\.(?P<repo>[a-z]\w+)$")
 
     match = pat_1_repo_and_dver.match(build) or \
             pat_2_dver_only.match(build) or \
