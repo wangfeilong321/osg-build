@@ -212,16 +212,8 @@ __repo_hints_cache = None
 def repo_hints(targets):
     """Return the valid arguments for --repo and the target and tag hints
     associated with them.  Most of the repo_hints are already specified in
-    REPO_HINTS_STATIC, but we need to determine the following:
-
-    1. Which 'versioned' osg targets exist (e.g. osg-3.1-el5)?
-    2. Do the new-style osg targets exist (e.g. osg-el5)? If so, --repo=osg
-       should be the same as --repo=new-osg. If not, --repo=osg should be the
-       same as --repo=old-osg.
-    3. Similarly, do the new-style osg-upcoming targets exist (e.g.
-       osg-upcoming-el5)? If so, --repo=upcoming should be the same as
-       --repo=new-upcoming. If not, --repo=upcoming should be the same as
-       --repo=old-upcoming.
+    REPO_HINTS_STATIC, but we need to determine which 'versioned' osg targets
+    (e.g. osg-3.1-el5) exist.
 
     'targets' is a list of koji targets and can be obtained from
     valid_koji_targets().
@@ -237,14 +229,6 @@ def repo_hints(targets):
                 if osg_match:
                     osgver = osg_match.group(1)
                     __repo_hints_cache[osgver] = __repo_hints_cache['osg-%s' % osgver] = {'target': 'osg-%s-el%%s' % osgver, 'tag': 'osg-el%s'}
-                if re.match(r'osg-el\d+', target):
-                    __repo_hints_cache['osg'] = __repo_hints_cache['new-osg']
-                if re.match(r'osg-upcoming-el\d+', target):
-                    __repo_hints_cache['upcoming'] = __repo_hints_cache['new-upcoming']
-        if 'osg' not in __repo_hints_cache:
-            __repo_hints_cache['osg'] = __repo_hints_cache['old-osg']
-        if 'upcoming' not in __repo_hints_cache:
-            __repo_hints_cache['upcoming'] = __repo_hints_cache['old-upcoming']
 
     return __repo_hints_cache
 
@@ -457,7 +441,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         callback=parser_targetopts_callback,
         type="string", dest="repo",
         help="Specify a set of repos to build to (osg, upcoming, internal, "
-        "hcc, uscms, old-osg, old-upcoming, osg-3.1 (or just 3.1))")
+        "hcc, uscms, osg-3.1 (or just 3.1))")
     for grp in [prebuild_group, rpmbuild_mock_group, mock_group, koji_group]:
         parser.add_option_group(grp)
 

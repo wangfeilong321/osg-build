@@ -89,10 +89,7 @@ class Reject(object):
 
 STATIC_ROUTES = {
     "hcc": Route("hcc-%s-testing", "hcc-%s-release", "hcc"),
-    "old-upcoming": Route("%s-osg-upcoming-development", "%s-osg-upcoming-testing", "osg"),
-    "old-testing": Route("%s-osg-development", "%s-osg-testing", "osg"),
-    "old-contrib": Route("%s-osg-development", "%s-osg-contrib", "osg"),
-    "new-upcoming": Route("osg-upcoming-%s-development", "osg-upcoming-%s-testing", "osgup"),
+    "upcoming": Route("osg-upcoming-%s-development", "osg-upcoming-%s-testing", "osgup"),
    }
 
 #
@@ -291,15 +288,8 @@ class RouteDiscovery(object):
 
     def get_osg_route_aliases(self, valid_versioned_osg_routes):
         """Get a dict of route aliases for the OSG routes.
-        These aliases are 'testing', 'upcoming', and 'contrib'.
-
-        If the old OSG routes (e.g. 'old-testing') are still valid, the aliases
-        will point to the old OSG routes.
-
-        Otherwise, if versioned OSG routes exist, then 'testing' and 'contrib'
-        are aliases to the newest testing and contrib routes (e.g.
-        'osg-3.2-%s-development') and 'upcoming' is an alias for the
-        'new-upcoming' route in STATIC_ROUTES.
+        These aliases are 'testing' and 'contrib'; they are aliases to the
+        newest testing and contrib routes (e.g.  'osg-3.2-%s-development').
 
         Assumes routes have been validated.
 
@@ -307,20 +297,11 @@ class RouteDiscovery(object):
         osg_route_aliases = {}
 
         for route_base in ['testing', 'contrib']:
-            old_route = 'old-%s' % route_base
-            if self.get_dvers_for_route_by_name(old_route, STATIC_ROUTES):
-                osg_route_aliases[route_base] = STATIC_ROUTES[old_route]
-            elif valid_versioned_osg_routes:
-                highest_route = self._get_highest_route(route_base, valid_versioned_osg_routes)
-                if highest_route:
-                    osg_route_aliases[route_base] = valid_versioned_osg_routes[highest_route]
-                else:
-                    raise KojiTagsAreMessedUp("No OSG route found for %s" % route_base)
-
-        if self.get_dvers_for_route_by_name('old-upcoming', STATIC_ROUTES):
-            osg_route_aliases['upcoming'] = STATIC_ROUTES['old-upcoming']
-        elif self.get_dvers_for_route_by_name('new-upcoming', STATIC_ROUTES):
-            osg_route_aliases['upcoming'] = STATIC_ROUTES['new-upcoming']
+            highest_route = self._get_highest_route(route_base, valid_versioned_osg_routes)
+            if highest_route:
+                osg_route_aliases[route_base] = valid_versioned_osg_routes[highest_route]
+            else:
+                raise KojiTagsAreMessedUp("No OSG route found for %s" % route_base)
 
         return osg_route_aliases
 
