@@ -63,8 +63,9 @@ class TestUtil(unittest.TestCase):
         self.assertEqual(('foo-1-1', '', 'el5'), promoter.split_repo_dver('foo-1-1.el5'))
         self.assertEqual(('foo-1-1', '', ''), promoter.split_repo_dver('foo-1-1'))
         # Tests against SOFTWARE-1420:
+        self.assertEqual(('foo-1-1', 'osg', ''), promoter.split_repo_dver('foo-1-1.osg', ['osg']))
         self.assertEqual(('bar-1-1.1', '', ''), promoter.split_repo_dver('bar-1-1.1'))
-        self.assertEqual(('bar-1-1.rc1', '', ''), promoter.split_repo_dver('bar-1-1.rc1'))
+        self.assertEqual(('bar-1-1.rc1', '', ''), promoter.split_repo_dver('bar-1-1.rc1', ['osg', 'osg31', 'osg32']))
 
 
 class TestRouteDiscovery(unittest.TestCase):

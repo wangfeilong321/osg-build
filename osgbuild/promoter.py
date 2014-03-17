@@ -114,7 +114,7 @@ def split_nvr(build):
     else:
         return ('', '', '')
 
-def split_repo_dver(build):
+def split_repo_dver(build, known_repos=None):
     """Split out the dist tag from the NVR of a build, returning a tuple
     containing (NVR (without dist tag), repo, dver).
     For example, split_repo_dver("foobar-1-1.osg32.el5") returns
@@ -128,17 +128,26 @@ def split_repo_dver(build):
             handled, but it's not worth the extra code)
         2. If the dver is in the release, it is at the end of the dist tag.
         3. The dist tag contains at most 2 components, separated by '.'
-        4. The repo component of a dist tag must start with [a-z].
+    If known_repos is specified (as a list), then the repo component must be
+    one of the strings in that list. Otherwise, the repo component must start
+    with [a-z]. This is a workaround to prevent misidentifying the repo
+    tag on a release like "1.11".
 
     """
     build_no_dist = build
     repo = ""
     dver = ""
 
+    build_no_dist_pat = r"(?P<build_no_dist>.+)"
+    repo_pat = r"(?P<repo>[a-z]\w+)"
+    dver_pat = r"(?P<dver>el\d+)"
+    if known_repos is not None:
+        repo_pat = r"(?P<repo>" + "|".join(known_repos) + ")"
+
     # order matters since later patterns are less specific and would match more
-    pat_1_repo_and_dver = re.compile(r"(?P<build_no_dist>.+)\.(?P<repo>[a-z]\w+)\.(?P<dver>el\d+)$")
-    pat_2_dver_only = re.compile(r"(?P<build_no_dist>.+)\.(?P<dver>el\d+)$")
-    pat_3_repo_only = re.compile(r"(?P<build_no_dist>.+)\.(?P<repo>[a-z]\w+)$")
+    pat_1_repo_and_dver = re.compile(build_no_dist_pat + "\." + repo_pat + "\." + dver_pat + "$")
+    pat_2_dver_only = re.compile(build_no_dist_pat + "\." + dver_pat + "$")
+    pat_3_repo_only = re.compile(build_no_dist_pat + "\." + repo_pat + "$")
 
     match = pat_1_repo_and_dver.match(build) or \
             pat_2_dver_only.match(build) or \
@@ -375,6 +384,7 @@ class Promoter(object):
             raise TypeError("Unexpected type for routes: %s" % type(routes))
         self.dvers = dvers
         self.kojihelper = kojihelper
+        self.repos = set(route.repo for route in self.routes)
 
 
     def add_promotion(self, pkg_or_build, ignore_rejects=False):
@@ -417,7 +427,7 @@ class Promoter(object):
 
         """
         tag = self._get_valid_tag_for_dver(tag_hint, dver)
-        pkg_or_build_no_dist = split_repo_dver(pkg_or_build)[0]
+        pkg_or_build_no_dist = split_repo_dver(pkg_or_build, self.repos)[0]
         # Case 1: pkg_or_build is a build, in which case take off its dist tag
         # and put the dist tag specified dist tag on, then find a build for that.
         build_nvr_1 = self.kojihelper.get_build_in_tag(tag, ".".join([pkg_or_build_no_dist, repo, dver]))
