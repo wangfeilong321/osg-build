@@ -73,33 +73,21 @@ class TestRouteDiscovery(unittest.TestCase):
         self.route_discovery = promoter.RouteDiscovery(TAGS)
         self.routes = self.route_discovery.get_routes()
 
-    def test_static_route(self):
-        self.assertEqual('hcc-%s-testing', self.routes['hcc'][0])
-        self.assertEqual('hcc-%s-release', self.routes['hcc'][1])
-
-        f, t = self.routes['hcc'][0:2]
-        self.assertEqual('hcc-%s-testing', f)
-        self.assertEqual('hcc-%s-release', t)
-
-    def test_detected_route(self):
-        self.assertEqual('osg-3.2-%s-development', self.routes['3.2-testing'][0])
-        self.assertEqual('osg-3.2-%s-testing', self.routes['3.2-testing'][1])
-
     def test_route_alias(self):
         for idx in [0, 1]:
             self.assertEqual(self.routes['testing'][idx], self.routes['3.2-testing'][idx])
 
-    def test_new_static_route(self):
+    def test_static_route(self):
         self.assertEqual('hcc-%s-testing', self.routes['hcc'].from_tag_hint)
         self.assertEqual('hcc-%s-release', self.routes['hcc'].to_tag_hint)
         self.assertEqual('hcc', self.routes['hcc'].repo)
 
-    def test_new_detected_route(self):
+    def test_detected_route(self):
         self.assertEqual('osg-3.2-%s-development', self.routes['3.2-testing'].from_tag_hint)
         self.assertEqual('osg-3.2-%s-testing', self.routes['3.2-testing'].to_tag_hint)
         self.assertEqual('osg32', self.routes['3.2-testing'].repo)
 
-    def test_new_route_alias(self):
+    def test_route_alias(self):
         for key in 'from_tag_hint', 'to_tag_hint', 'repo':
             self.assertEqual(getattr(self.routes['testing'], key), getattr(self.routes['3.2-testing'], key))
 
