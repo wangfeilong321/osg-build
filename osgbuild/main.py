@@ -440,8 +440,9 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         "--repo", action="callback",
         callback=parser_targetopts_callback,
         type="string", dest="repo",
-        help="Specify a set of repos to build to (osg, upcoming, internal, "
-        "hcc, uscms, osg-3.1 (or just 3.1))")
+        help="Specify a set of repos to build to (osg-3.1 (or just 3.1), "
+        + ", ".join(REPO_HINTS_STATIC.keys())
+        + ")")
     for grp in [prebuild_group, rpmbuild_mock_group, mock_group, koji_group]:
         parser.add_option_group(grp)
 
