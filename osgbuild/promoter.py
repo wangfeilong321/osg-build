@@ -733,7 +733,7 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
             else:
                 matched_routes.append(matching_routes[0])
     else:
-        matched_routes = [valid_routes[DEFAULT_ROUTE]]
+        matched_routes = [DEFAULT_ROUTE]
     options.routes = matched_routes
 
     return (options, args)
