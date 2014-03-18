@@ -172,6 +172,11 @@ def verify_correct_branch(package_dir, buildopts):
 def get_package_info(package_dir):
     """Return the svn info for a package dir."""
     command = ["svn", "info", package_dir]
+    # If we don't specify the revision in the argument (e.g. no foo@19999)
+    # then explicitly specify HEAD to make sure we're not getting an older
+    # version.
+    if not re.search(r'@\d+$', package_dir):
+        command += ['-r', 'HEAD']
 
     out, err = utils.sbacktick(command, clocale=True, err2out=True)
     if err:
