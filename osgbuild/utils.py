@@ -17,7 +17,9 @@ class CalledProcessError(Exception):
 
     """
     def __init__(self, process, returncode, output=None):
-        super(CalledProcessError, self).__init__()
+        # This breaks in python 2.4 (because Exception isn't a new-style class?)
+        # super(CalledProcessError, self).__init__()
+        Exception.__init__(self)
         self.process = process
         self.returncode = returncode
         self.output = output
