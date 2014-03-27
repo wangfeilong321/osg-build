@@ -26,13 +26,6 @@ from osgbuild.utils import (
 
 
 # subject, openssl 0.9.8 hash, openssl 1.x hash
-DOEGRIDS_CA_CERTS = [
-    {'subject': "/DC=net/DC=ES/O=ESnet/OU=Certificate Authorities/CN=ESnet Root CA 1",
-    '098hash': "d1b603c3",
-    '1xhash': "0119347c"},
-    {'subject': "/DC=org/DC=DOEGrids/OU=Certificate Authorities/CN=DOEGrids CA 1",
-    '098hash': "1c3f2ca8",
-    '1xhash': "12d0da68"}]
 DIGICERT_CA_CERTS = [
     {'subject': "/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert Assured ID Root CA",
     '098hash': "69105f4f",
@@ -46,11 +39,9 @@ DIGICERT_CA_CERTS = [
     {'subject': "/C=US/O=DigiCert Grid/OU=www.digicert.com/CN=DigiCert Grid Trust CA",
     '098hash': "38f7145f",
     '1xhash': "67707166"}]
-CA_CERTS = DOEGRIDS_CA_CERTS + DIGICERT_CA_CERTS
 
 CSL_KOJI_PATH = "/p/vdt/workspace/koji-1.6.0"
 
-DOEGRIDS_TARBALL_URL = "https://pki1.doegrids.org/Other/doegrids.tar"
 DIGICERT_GRID_BASEURL = "http://www.digicert-grid.com"
 GRID_CERTS_DIR = "/etc/grid-security/certificates"
 
@@ -137,21 +128,14 @@ def create_ca_bundle(working_dir="."):
         certs_dir = GRID_CERTS_DIR
     else:
         certs_dir = os.path.join(working_dir, 'certs')
-        # Download DOE grid certificates
-        tarball_name = checked_download(working_dir, DOEGRIDS_TARBALL_URL, "DOEGrids certs tarball")
-        checked_call(["tar", "xf", tarball_name, "-C", working_dir])
-        if (not os.path.isdir(os.path.join(working_dir, 'doegrids')) or
-                not glob.glob(os.path.join(working_dir, 'doegrids', '*.0'))):
-            raise Error("DOEGrids certs tarball does not have expected contents")
-        os.rename(os.path.join(working_dir, 'doegrids'), certs_dir)
-
+        os.mkdir(certs_dir)
         # Download DigiCert grid certificates
         for cert in DIGICERT_CA_CERTS:
             checked_download(certs_dir, os.path.join(DIGICERT_GRID_BASEURL, cert['098hash']+".0"))
 
     bundle_contents = ""
     openssl_major = int(get_openssl_version()[0])
-    for cert in CA_CERTS:
+    for cert in DIGICERT_CA_CERTS:
         expected_subject = "subject= " + cert['subject']
         if openssl_major == 0:
             expected_hash = cert['098hash']
