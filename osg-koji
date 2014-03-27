@@ -202,7 +202,10 @@ def copy_old_client_cert(new_client_cert_path):
 @with_safe_umask
 def create_client_cert_from_cert_and_key(new_client_cert_path, user_cert, user_key):
     safe_make_backup(new_client_cert_path)
-    os.system("cat %r %r > %r" % (user_cert, user_key, new_client_cert_path))
+    # Concatenate the cert and key; make sure there is a newline between them
+    os.system("(cat %r; echo; cat %r) > %r" % (user_cert, user_key, new_client_cert_path))
+    # Convert DOS line endings; use sed because dos2unix might not be installed
+    os.system("sed -i -e 's/\015$//g' %r" % new_client_cert_path)
 
 @with_safe_umask
 def create_client_symlink_to_proxy(new_client_cert_path):
@@ -245,7 +248,8 @@ def setup_koji_client_cert(user_cert, user_key):
 Could not find user cert (%(user_cert)r) and/or key (%(user_key)r).
 You must manually copy your certs:
 
-    cat usercert.pem userkey.pem > %(new_client_cert_path)s
+    (cat usercert.pem; echo; cat userkey.pem) > %(new_client_cert_path)s
+    dos2unix %(new_client_cert_path)s
     chmod 0600 %(new_client_cert_path)s
 
 where 'usercert.pem' and 'userkey.pem' are your X.509 public and private keys.
