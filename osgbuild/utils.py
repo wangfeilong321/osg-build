@@ -1,4 +1,5 @@
 """utilities for osg-build"""
+import errno
 import itertools
 import logging
 import os
@@ -259,12 +260,17 @@ def ask_yn(question):
 
 def safe_make_backup(filename, move=True):
     """Back up a file if it exists (either copy or move)"""
-    if os.path.exists(filename):
-        newname = filename + datetime.now().strftime(".%y%m%d%H%M%S~")
+    newname = filename + datetime.now().strftime(".%y%m%d%H%M%S~")
+    try:
         if move:
             shutil.move(filename, newname)
         else:
             shutil.copy(filename, newname)
+    except IOError, err:
+        if err.errno == errno.ENOENT:
+            pass
+        else:
+            raise
 
 
 # original from rsvprobe.py by Marco Mambelli
