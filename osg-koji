@@ -197,7 +197,10 @@ def with_safe_umask(function_to_wrap):
 @with_safe_umask
 def copy_old_client_cert(new_client_cert_path):
     safe_make_backup(new_client_cert_path)
-    shutil.copy(OLD_CLIENT_CERT_FILE, new_client_cert_path)
+    try:
+        shutil.copy(OLD_CLIENT_CERT_FILE, new_client_cert_path)
+    except EnvironmentError, err:
+        raise Error("Unable to copy client cert: %s" % str(err))
 
 @with_safe_umask
 def create_client_cert_from_cert_and_key(new_client_cert_path, user_cert, user_key):
@@ -211,7 +214,10 @@ def create_client_cert_from_cert_and_key(new_client_cert_path, user_cert, user_k
 def create_client_symlink_to_proxy(new_client_cert_path):
     safe_make_backup(new_client_cert_path)
     proxy_filename = '/tmp/x509up_u%d' % os.getuid()
-    os.symlink(proxy_filename, new_client_cert_path)
+    try:
+        os.symlink(proxy_filename, new_client_cert_path)
+    except EnvironmentError, err:
+        raise Error("Unable to create symlink: %s" % str(err))
 
 
 def setup_koji_client_cert(user_cert, user_key):

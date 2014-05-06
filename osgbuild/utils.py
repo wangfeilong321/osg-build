@@ -263,11 +263,13 @@ def safe_make_backup(filename, move=True):
     newname = filename + datetime.now().strftime(".%y%m%d%H%M%S~")
     try:
         if move:
-            shutil.move(filename, newname)
+            os.rename(filename, newname)
         else:
             shutil.copy(filename, newname)
-    except IOError, err:
-        if err.errno == errno.ENOENT:
+    except EnvironmentError, err:
+        if err.errno == errno.ENOENT: # no file to back up
+            pass
+        elif "are the same file" in str(err): # file already backed up
             pass
         else:
             raise
