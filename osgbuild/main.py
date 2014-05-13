@@ -464,7 +464,11 @@ def get_dver_from_string(s):
         return None
 
 def target_for_repo_hint(repo_hint, dver):
-    return repo_hints(valid_koji_targets())[repo_hint]['target'] % dver
+    hints = repo_hints(valid_koji_targets())
+    if repo_hint in hints:
+        return hints[repo_hint]['target'] % dver
+    else:
+        raise UsageError("'%s' is not a valid repo.\nValid repos are: %s" % (repo_hint, ", ".join(sorted(hints.keys()))))
 
 def tag_for_repo_hint(repo_hint, dver):
     return repo_hints(valid_koji_targets())[repo_hint]['tag'] % dver
