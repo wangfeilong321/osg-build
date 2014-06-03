@@ -1,0 +1,111 @@
+#!/usr/bin/env python
+import re
+import sys
+import datetime
+import time
+
+from osgbuild import utils
+
+try:
+    strptime = datetime.datetime.strptime
+except AttributeError:
+    def strptime(date_string, format):
+        return datetime.datetime(*(time.strptime(date_string, format)[0:6]))
+
+def transform_date(date_string, from_format, to_format):
+    return strptime(date_string, from_format).strftime(to_format)
+
+class Error(Exception):
+    pass
+
+_all_tags = []
+def get_all_tags():
+    global _all_tags
+    if not _all_tags:
+        # TODO EC
+        _all_tags = utils.sbacktick(["osg-koji", "list-tags"])[0].split("\n")
+    return _all_tags
+
+def is_tag(maybe_tag):
+    return maybe_tag in get_all_tags()
+
+def is_build(maybe_build):
+    out, ret = utils.sbacktick(["osg-koji", "buildinfo", maybe_build])
+    if maybe_build not in out:
+        raise Error("koji buildinfo returned unexpected result. Return: %d Output: %s" % (ret, out))
+    return "No such build" not in out
+
+def is_package(maybe_package):
+    # Returns 1 if package not found
+    out, ret = utils.sbacktick(["osg-koji", "list-pkgs", "--package", maybe_package])
+    if maybe_package not in out or (not 0 <= ret <= 1):
+        raise Error("koji list-pkgs returned unexpected result. Return: %d Output: %s" % (ret, out))
+    return "No such entry" not in out
+
+def run_list_tag_history(item):
+    cmd = ["osg-koji", "list-tag-history"]
+    if is_package(item):
+        cmd += ["--package", item]
+    elif is_build(item):
+        cmd += ["--build",   item]
+    elif is_tag(item):
+        cmd += ["--tag",     item]
+    else:
+        raise Error("%s is not a package, build or tag" % item)
+    return utils.sbacktick(cmd)[0]
+
+def parse_history(lth_output):
+    # This is what a line of output from koji list-tag-history looks like:
+    # Fri May 30 11:45:59 2014: osg-configure-1.0.55-2.osg31.el6 tagged into osg-3.1-el6-development by Matyas Selmeci [still active]
+    pattern = re.compile(r"(?P<date>.+?): (?P<build>\S+) (?P<action>tagged into|untagged from) (?P<tag>\S+) by (?P<user>[^\[]+) \[still active\]")
+    parsed = []
+    for line in lth_output.split("\n"):
+        m = pattern.match(line)
+        if m:
+            user = m.group('user').rstrip()
+            if 'Edgar' in user and 'Fajardo' in user:
+                user = "Edgar Fajardo"
+            user = re.sub(r" \d+$", "", user)
+            parsed.append({'date' : transform_date(m.group('date'), "%a %b %d %H:%M:%S %Y", "%Y-%m-%d"),
+                           'user' : user,
+                           'tag'  : m.group('tag'),
+                           'build': m.group('build')})
+    return parsed
+
+def detect_mode(item):
+    if is_package(item):
+        return 'package'
+    if is_build(item):
+        return 'build'
+    if is_tag(item):
+        return 'tag'
+
+def format_history_item(history_item, mode):
+    line = "%s  %-18s  " % (history_item['date'], history_item['user'])
+    if mode == 'package':
+        line += "%-30s  %s" % (history_item['tag'], history_item['build'])
+    if mode == 'build':
+        line += "%s" % (history_item['tag'])
+    if mode == 'tag':
+        line += "%s" % (history_item['build'])
+    return line
+
+
+def main(argv):
+    if len(argv) < 2 or argv[1] in ('-h', '--help'):
+        print "Usage: koji-blame <PACKAGE or TAG or BUILD>"
+        return 2
+
+    if not utils.which('osg-koji'):
+        raise Error("osg-koji not found in $PATH")
+    mode = detect_mode(argv[1])
+    lth_output = run_list_tag_history(argv[1])
+    print("\n".join([format_history_item(item, mode) for item in parse_history(lth_output)]))
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv))
+    except Error, err:
+        sys.stderr.write(str(err))
+        sys.exit(1)
+
