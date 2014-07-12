@@ -37,9 +37,10 @@ To submit test build(s):
 To submit final build(s):
     %(prog)s koji PACKAGE1 <PACKAGE2..n>
 
-To submit build(s) for EL5 or EL6 only:
+To submit build(s) for EL5, EL6 or EL7 only:
     %(prog)s koji --el5 PACKAGE1 <PACKAGE2..n>
     %(prog)s koji --el6 PACKAGE1 <PACKAGE2..n>
+    %(prog)s koji --el7 PACKAGE1 <PACKAGE2..n>
 
 Also see the documentation at:
     https://twiki.grid.iu.edu/bin/view/SoftwareTeam/OSGBuildTools

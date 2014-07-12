@@ -95,6 +95,13 @@ DEFAULT_BUILDOPTS_BY_DVER = {
         'koji_target': None,
         'redhat_release': '6',
         'repo': 'osg',
+    },
+    '7': {
+        'distro_tag': 'osg.el7',
+        'koji_tag': None,
+        'koji_target': None,
+        'redhat_release': '7',
+        'repo': 'osg',
     }
 }
 
@@ -108,6 +115,7 @@ REPO_HINTS_STATIC = {
     'perfsonar': {'target': 'perfsonar-el%s', 'tag': 'perfsonar-el%s'},
 }
 
+DEFAULT_DVERS = ['5', '6']
 DVERS = DEFAULT_BUILDOPTS_BY_DVER.keys()
 
 BUGREPORT_EMAIL = "osg-software@opensciencegrid.org"

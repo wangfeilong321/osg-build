@@ -294,6 +294,11 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         dest="redhat_release",
         help="Build for RHEL 6-compatible. Equivalent to --redhat-release=6")
     parser.add_option(
+        "--el7", action="callback", callback=parser_targetopts_callback,
+        type=None,
+        dest="redhat_release",
+        help="Build for RHEL 7-compatible. Equivalent to --redhat-release=7")
+    parser.add_option(
         "--loglevel",
         help="The level of logging the script should do. "
         "Valid values are: DEBUG,INFO,WARNING,ERROR,CRITICAL")
@@ -332,7 +337,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
     rpmbuild_mock_group.add_option(
         "--distro-tag",
         help="The distribution tag to append to the end of the release. "
-        "(Default: osg.el5 or osg.el6, depending on --redhat-release)")
+        "(Default: osg.el5, osg.el6 or osg.el7, depending on --redhat-release)")
     rpmbuild_mock_group.add_option(
         "-t", "--target-arch",
         help="The target architecture to build for ")
@@ -378,7 +383,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         callback=parser_targetopts_callback,
         type="string",
         help="The koji target to use for building. Default: "
-        "osg-el5 or osg-el6 depending on --redhat-release")
+        "osg-el5, osg-el6 or osg-el7 depending on --redhat-release")
     koji_group.add_option(
         "--koji-tag",
         action="callback",
@@ -386,7 +391,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         type="string",
         help="The koji tag to add packages to. The special value TARGET "
         "uses the destination tag defined in the koji target. Default: "
-        "osg-el5 or osg-el6 depending on --redhat-release")
+        "osg-el5, osg-el6 or osg-el7 depending on --redhat-release")
     koji_group.add_option(
         "--koji-target-and-tag", "--ktt",
         action="callback",
@@ -484,7 +489,7 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
     for EL 5.
 
     enabled_dvers is the set of dvers to actually build for, which the --el5,
-    --el6 and --redhat-release arguments affect. dvers may also be
+    --el6, --el7 and --redhat-release arguments affect. dvers may also be
     implicitly turned on by other arguments, e.g. specifying
     --koji-tag=el5-foobar will implicitly turn on el5 builds.
 
@@ -518,6 +523,8 @@ def parser_targetopts_callback(option, opt_str, value, parser, *args, **kwargs):
             enabled_dvers.add('5')
         elif opt_str == '--el6':
             enabled_dvers.add('6')
+        elif opt_str == '--el7':
+            enabled_dvers.add('7')
         elif opt_str == '--redhat-release':
             if value in DVERS:
                 enabled_dvers.add(value)
@@ -641,7 +648,7 @@ def get_buildopts(options, task):
     enabled_dvers = getattr(options, 'enabled_dvers', None)
     if not enabled_dvers:
         if task == 'koji':
-            buildopts['enabled_dvers'] = set(DVERS)
+            buildopts['enabled_dvers'] = set(DEFAULT_DVERS)
         else:
             buildopts['enabled_dvers'] = set([get_local_machine_dver()])
 
