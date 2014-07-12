@@ -142,13 +142,13 @@ def split_repo_dver(build, known_repos=None):
         repo_pat = r"(?P<repo>" + "|".join(known_repos) + ")"
 
     # order matters since later patterns are less specific and would match more
-    pat_1_repo_and_dver = re.compile(build_no_dist_pat + "\." + repo_pat + "\." + dver_pat + "$")
-    pat_2_dver_only = re.compile(build_no_dist_pat + "\." + dver_pat + "$")
-    pat_3_repo_only = re.compile(build_no_dist_pat + "\." + repo_pat + "$")
+    pat_1_repo_and_dver = re.compile(build_no_dist_pat + r"\." + repo_pat + r"\." + dver_pat + "$")
+    pat_2_dver_only = re.compile(build_no_dist_pat + r"\." + dver_pat + "$")
+    pat_3_repo_only = re.compile(build_no_dist_pat + r"\." + repo_pat + "$")
 
-    match = pat_1_repo_and_dver.match(build) or \
-            pat_2_dver_only.match(build) or \
-            pat_3_repo_only.match(build)
+    match = (pat_1_repo_and_dver.match(build) or
+             pat_2_dver_only.match(build) or
+             pat_3_repo_only.match(build))
 
     if match:
         groupdict = match.groupdict()
