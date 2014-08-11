@@ -198,9 +198,6 @@ def valid_koji_targets():
 def valid_dvers(targets):
     """Return a list of valid dvers as derived from a list of koji targets.
     targets: a list of koji targets returned by valid_koji_targets"""
-    # TODO this will replace the DVERS constant and will let us add el7 support
-    # without changes to osg-build
-
     dvers = set()
     for target in targets:
         dver = get_dver_from_string(target)
@@ -311,7 +308,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         dest="redhat_release",
         type="string",
         help="The version of the distribution to build the package for. "
-        "Valid values are: 5 (for RHEL 5), 6 (for RHEL 6). "
+        "Valid values are: 5 (for RHEL 5), 6 (for RHEL 6), 7 (for RHEL 7). "
         "If not specified, will build for all releases (koji task) or the "
         "platform you are running this on (other tasks)")
     parser.add_option(
