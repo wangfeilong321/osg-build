@@ -7,7 +7,7 @@ from osgbuild.error import ClientCertError
 from osgbuild import utils
 
 class ClientCert(object):
-    __slots__ = ['filename', 'first_commonname', 'enddate']
+    __slots__ = ['filename', 'first_commonname', 'startdate', 'enddate']
 
     def __init__(self, filename):
         self.filename = str(filename)
@@ -15,6 +15,7 @@ class ClientCert(object):
         if not os.path.exists(self.filename):
             raise ClientCertError(self.filename, "file not found")
 
+        self.startdate = None
         self.enddate = None
         self.first_commonname = None
         self.do_openssl_lookup()
@@ -25,27 +26,31 @@ class ClientCert(object):
                     "-in", self.filename,
                     "-noout",
                     "-subject", "-nameopt", "multiline",
-                    "-enddate"]
+                    "-dates"]
         output = utils.checked_backtick(cmd, clocale=True)
 
-        self.enddate = self.extract_enddate(output)
+        self.startdate, self.enddate = self.extract_dates(output)
         self.first_commonname = self.extract_first_commonname(output)
 
+    @staticmethod
+    def _parse_date(datestr):
+        # Want to match something like "Nov 15 09:49:34 2013 GMT"
+        # datetime.strptime is not in Python 2.4, but the 2.6 manual has this
+        # equivalent:
+        return datetime(*(time.strptime(datestr, "%b %d %H:%M:%S %F %Z")[0:6]))
+
     def extract_enddate(self, output):
+        startdate_match = re.search(r"""(?xms)
+                ^ notBefore=([^\n]+) $""", output)
         enddate_match = re.search(r"""(?xms)
                 ^ notAfter=([^\n]+) $""", output)
-        enddate = None
-        if enddate_match:
-            # Want to match something like "Nov 15 09:49:34 2013 GMT"
-            try:
-                # The Python docs say that the following is the Python 2.4-compatible version of this:
-                #   enddate = datetime.strptime(enddate_match.group(1), "%b %d %H:%M:%S %Y %Z")
-                enddate = datetime(*(time.strptime(enddate_match.group(1), "%b %d %H:%M:%S %Y %Z")[0:6]))
-            except ValueError:
-                pass
-        if not enddate:
-            raise ClientCertError(self.filename, "cannot determine expiration date")
-        return enddate
+        try:
+            startdate = self._parse_date(startdate_match.group(1))
+            enddate = self._parse_date(enddate_match.group(1))
+        except (ValueError, AttributeError):
+            raise ClientCertError(self.filename, "cannot determine valid dates")
+
+        return startdate, enddate
 
     def extract_first_commonname(self, output):
         # Get the first commonName using the negative lookbehind assertion to make
@@ -62,5 +67,7 @@ class ClientCert(object):
     def check_expired(self):
         if datetime.utcnow() > self.enddate:
             raise ClientCertError(self.filename, "cert expired")
+        elif datetime.utcnow() < self.startdate:
+            raise ClientCertError(self.filename, "cert not valid yet")
 
 
