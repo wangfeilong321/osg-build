@@ -19,7 +19,7 @@ class ClientCert(object):
         self.enddate = None
         self.first_commonname = None
         self.do_openssl_lookup()
-        self.check_expired()
+        self.assert_not_expired()
 
     def do_openssl_lookup(self):
         cmd = ["openssl", "x509",
@@ -64,7 +64,7 @@ class ClientCert(object):
             raise ClientCertError(self.filename, "cannot determine commonName")
         return cn_match.group(1)
 
-    def check_expired(self):
+    def assert_not_expired(self):
         if datetime.utcnow() > self.enddate:
             raise ClientCertError(self.filename, "cert expired")
         elif datetime.utcnow() < self.startdate:
