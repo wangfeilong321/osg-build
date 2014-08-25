@@ -19,6 +19,7 @@ except ImportError:
     from osgbuild.namedtuple import namedtuple
 
 DEFAULT_ROUTE = 'testing'
+DVERS_OFF_BY_DEFAULT = ['el7']
 
 # logging. Can't use root logger because its loglevel can't be changed once set
 log = logging.getLogger('osgpromote')
@@ -693,8 +694,11 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
     for dver in all_dvers:
         parser.add_option("--%s-only" % dver, action="store_true", default=False,
                           help="Promote only %s builds" % dver)
-        parser.add_option("--no-%s" % dver, "--no%s" % dver, action="store_true", default=False,
-                          help="Do not promote %s builds" % dver)
+        if dver not in DVERS_OFF_BY_DEFAULT:
+            parser.add_option("--no-%s" % dver, "--no%s" % dver, action="store_true", default=False,
+                              help="Do not promote %s builds" % dver)
+        else:
+            parser.add_option("--%s" % dver, dest="no_%s" % dver, action="store_false", default=True)
 
     if len(argv) < 2:
         parser.print_help()
@@ -733,6 +737,7 @@ def _get_wanted_dvers(all_dvers, parser, options):
     """Helper for parse_cmdline_args. Looks at the --dver-only (e.g. --el5-only)
     and --no-dver (e.g. --no-el5) arguments the user may have specified and
     returns a list of the dvers we actually want to promote for.
+    --elX-only arguments override --no-elX arguments.
 
     """
     wanted_dvers = list(all_dvers)
@@ -746,15 +751,12 @@ def _get_wanted_dvers(all_dvers, parser, options):
         bad_opt_names = ['--%s-only' % dver for dver in only_dvers]
         parser.error("Can't specify " + " and ".join(bad_opt_names))
     elif len(only_dvers) == 1:
-        wanted_dvers = list(only_dvers)
+        return list(only_dvers)
 
     # Now go through any --no-dvers (e.g. --no-el5) the user specified.
     for dver in all_dvers:
         if getattr(options, "no_%s" % dver):
-            if dver in only_dvers:
-                parser.error("Can't specify both --no-%s and --%s-only" % (dver, dver))
-            else:
-                wanted_dvers.remove(dver)
+            wanted_dvers.remove(dver)
 
     return wanted_dvers
 
