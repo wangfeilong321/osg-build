@@ -37,9 +37,9 @@ class ClientCert(object):
         # Want to match something like "Nov 15 09:49:34 2013 GMT"
         # datetime.strptime is not in Python 2.4, but the 2.6 manual has this
         # equivalent:
-        return datetime(*(time.strptime(datestr, "%b %d %H:%M:%S %F %Z")[0:6]))
+        return datetime(*(time.strptime(datestr, "%b %d %H:%M:%S %Y %Z")[0:6]))
 
-    def extract_enddate(self, output):
+    def extract_dates(self, output):
         startdate_match = re.search(r"""(?xms)
                 ^ notBefore=([^\n]+) $""", output)
         enddate_match = re.search(r"""(?xms)
@@ -47,8 +47,12 @@ class ClientCert(object):
         try:
             startdate = self._parse_date(startdate_match.group(1))
             enddate = self._parse_date(enddate_match.group(1))
-        except (ValueError, AttributeError):
-            raise ClientCertError(self.filename, "cannot determine valid dates")
+        except (ValueError, AttributeError), err:
+            raise ClientCertError(
+                self.filename,
+                "cannot determine valid dates from openssl output"
+                    "\n%s\n"
+                    "Error was: %s" % (output, str(err)))
 
         return startdate, enddate
 
@@ -61,7 +65,9 @@ class ClientCert(object):
             (?!<commonName)
             ^ \s* commonName \s* = \s* ([^\n]+) $""", output)
         if not cn_match:
-            raise ClientCertError(self.filename, "cannot determine commonName")
+            raise ClientCertError(
+                self.filename,
+                "cannot determine commonName from openssl output\n%s\n" % output)
         return cn_match.group(1)
 
     def assert_not_expired(self):
