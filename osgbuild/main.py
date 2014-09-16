@@ -360,6 +360,9 @@ rpmbuild     Build using rpmbuild(8) on the local machine
     koji_group = OptionGroup(parser,
                              "koji task options")
     koji_group.add_option(
+        "--background", action="store_true",
+        help="Run build at a lower priority")
+    koji_group.add_option(
         "--dry-run", action="store_true",
         help="Do not invoke koji, only show what would be done.")
     koji_group.add_option(

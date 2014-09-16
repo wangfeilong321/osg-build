@@ -130,6 +130,8 @@ class KojiInter(object):
         else:
             self.tag = opts['koji_tag']
 
+        self.background = opts['background']
+
 
 
     def add_pkg(self, package_name):
@@ -146,7 +148,8 @@ class KojiInter(object):
                                             self.target,
                                             self.scratch,
                                             regen_repos=self.regen_repos,
-                                            no_wait=self.no_wait)
+                                            no_wait=self.no_wait,
+                                            background=self.background)
 
 
     def build_svn(self, url, rev):
@@ -155,7 +158,8 @@ class KojiInter(object):
                                        self.target,
                                        self.scratch,
                                        regen_repos=self.regen_repos,
-                                       no_wait=self.no_wait)
+                                       no_wait=self.no_wait,
+                                       background=self.background)
 
     def build_git(self, remote, rev, path):
         """Submit a GIT build"""
@@ -164,7 +168,8 @@ class KojiInter(object):
                                        self.target,
                                        self.scratch,
                                        regen_repos=self.regen_repos,
-                                       no_wait=self.no_wait)
+                                       no_wait=self.no_wait,
+                                       background=self.background)
 
     def mock_config(self, arch, tag, dist, outpath, name):
         """Request a mock config from koji-hub"""
@@ -223,7 +228,7 @@ class KojiShellInter(object):
         """build package at url for target.
 
         Using **kwargs so signature is same as KojiLibInter.build.
-        kwargs recognized: no_wait, regen_repos
+        kwargs recognized: no_wait, regen_repos, background
 
         """
         log.debug("building " + url)
@@ -234,6 +239,8 @@ class KojiShellInter(object):
             build_subcmd += ["--scratch"]
         if no_wait:
             build_subcmd += ["--nowait"]
+        if background:
+            build_subcmd += ["--background"]
         log.info("Calling koji to build the package for target %s", target)
 
         if not self.dry_run:
@@ -447,14 +454,17 @@ class KojiLibInter(object):
         """build package at url for target.
 
         Using **kwargs so signature is same as KojiShellInter.build.
-        kwargs recognized: priority
+        kwargs recognized: priority, background
 
         """
         opts = { 'scratch': scratch }
+        priority = kwargs.get('priority', None)
+        if kwargs.get('background', False):
+            priority = priority or 5 # Copied from koji cli
         if not self.dry_run:
-            return self.kojisession.build(url, target, opts, kwargs.get('priority'))
+            return self.kojisession.build(url, target, opts, priority)
         else:
-            log.info("kojisession.build(%r, %r, %r, %r)", url, target, opts, kwargs.get('priority'))
+            log.info("kojisession.build(%r, %r, %r, %r)", url, target, opts, priority)
 
 
     def build_srpm(self, srpm, target, scratch=False, **kwargs):
