@@ -1,3 +1,5 @@
+- Add --background option for koji builds to lower priority
+
 * Mon Aug 11 2014 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.4.0
 - EL7 support for osg-build (SOFTWARE-1429)
 
