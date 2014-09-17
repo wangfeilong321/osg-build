@@ -134,7 +134,7 @@ def main(argv):
         for tid in task_ids:
             print HTTPS_KOJI_HUB + "/koji/taskinfo?taskID=" + str(tid)
         if not buildopts['no_wait']:
-            kojiinter.KojiInter.backend.watch_tasks(task_ids)
+            ret = kojiinter.KojiInter.backend.watch_tasks(task_ids)
             # TODO This is not implemented for the KojiShellInter backend
             # Not implemented for SVN builds since results_dir is undefined for those
             if buildopts['getfiles']:
@@ -146,6 +146,10 @@ def main(argv):
                     for destdir, tids in task_ids_by_results_dir.iteritems():
                         kojiinter.KojiInter.backend.download_results(tids, destdir)
                         log.info("Results and logs downloaded to %s", destdir)
+            try:
+                return int(ret)
+            except (TypeError, ValueError):
+                pass
         else:
             if buildopts['getfiles']:
                 log.warning("Cannot use both --getfiles and --nowait")
