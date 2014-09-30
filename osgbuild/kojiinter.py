@@ -234,6 +234,7 @@ class KojiShellInter(object):
         log.debug("building " + url)
         no_wait = kwargs.get('no_wait', False)
         regen_repos = kwargs.get('regen_repos', False)
+        background = kwargs.get('background', False)
         build_subcmd = ["build", target, url]
         if scratch:
             build_subcmd += ["--scratch"]
