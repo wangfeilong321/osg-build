@@ -121,3 +121,5 @@ DVERS = DEFAULT_BUILDOPTS_BY_DVER.keys()
 
 BUGREPORT_EMAIL = "osg-software@opensciencegrid.org"
 
+BACKGROUND_THRESHOLD = 5
+

@@ -89,6 +89,9 @@ def main(argv):
     if (task == 'koji' and not buildopts['scratch'] and not buildopts['vcs']):
         raise UsageError("Non-scratch Koji builds must be from SVN!")
 
+    if task == 'koji' and len(package_dirs) >= BACKGROUND_THRESHOLD:
+        buildopts['background'] = True
+
     # main loop
     # HACK
     task_ids = []
