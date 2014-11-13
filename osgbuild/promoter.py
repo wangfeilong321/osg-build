@@ -162,7 +162,7 @@ class RouteDiscovery(object):
     """For discovering and validating promotion routes.
     In addition to including the predefined routes (from STATIC_ROUTES),
     also looks for new-style osg routes (with tags of the form
-    osg-M.N-elX-{development,testing,contrib} or
+    osg-M.N-elX-{development,testing} or
     osg-upcoming-elX-{development,testing}), and discovers which dvers
     each route is good for.
 
@@ -258,12 +258,10 @@ class RouteDiscovery(object):
         valid_versioned_osg_routes = {}
         for osgver, dver in self._get_osgvers_dvers():
             devel_tag_hint = "osg-%s-%%s-development" % (osgver)
-            contrib_tag_hint = "osg-%s-%%s-contrib" % (osgver)
             testing_tag_hint = "osg-%s-%%s-testing" % (osgver)
             osgshortver = osgver.replace('.', '')
 
-            potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint, 'osg' + osgshortver),
-                                osgver + "-contrib": (devel_tag_hint, contrib_tag_hint, 'osg' + osgshortver)}
+            potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint, 'osg' + osgshortver)}
 
             for route_name, route in potential_routes.items():
                 self.validate_route_for_dver(route, dver)
@@ -289,15 +287,15 @@ class RouteDiscovery(object):
 
     def get_osg_route_aliases(self, valid_versioned_osg_routes):
         """Get a dict of route aliases for the OSG routes.
-        These aliases are 'testing' and 'contrib'; they are aliases to the
-        newest testing and contrib routes (e.g.  'osg-3.2-%s-development').
+        There is only one alias, 'testing'; it is an alias to the newest
+        testing route (e.g. 'osg-3.2-%s-development').
 
         Assumes routes have been validated.
 
         """
         osg_route_aliases = {}
 
-        for route_base in ['testing', 'contrib']:
+        for route_base in ['testing']:
             highest_route = self._get_highest_route(route_base, valid_versioned_osg_routes)
             if highest_route:
                 osg_route_aliases[route_base] = valid_versioned_osg_routes[highest_route]
