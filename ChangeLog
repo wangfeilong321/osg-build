@@ -1,3 +1,5 @@
+- Don't require a cert when doing a mock build using a koji config
+
 * Tue Sep 30 2014 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.4.1
 - Text fixes
 - Exit nonzero if watched builds fail

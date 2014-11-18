@@ -109,7 +109,7 @@ class KojiInter(object):
         self.regen_repos = opts['regen_repos']
         self.scratch = opts['scratch']
 
-        self.cn = opts['kojilogin'] or get_cn()
+        self.cn = opts['kojilogin'] or None
 
         if KojiInter.backend is None:
             if HAVE_KOJILIB and opts.get('koji_backend') != 'shell':
@@ -183,7 +183,10 @@ class KojiShellInter(object):
 
     """
     def __init__(self, user=None, dry_run=False, koji_wrapper=False):
-        self.user = user or get_cn()
+        if not dry_run:
+            self.user = user or get_cn()
+        else:
+            self.user = user or "osgbuild"
         self.koji_cmd = get_koji_cmd(koji_wrapper)
         self.dry_run = dry_run
 
@@ -388,7 +391,10 @@ class KojiLibInter(object):
         self.kojisession = None
         self.server = os.path.join(KOJI_HUB, "kojihub")
         self.serverca = None
-        self.user = user or get_cn()
+        if not dry_run:
+            self.user = user or get_cn()
+        else:
+            self.user = user or "osgbuild"
         self.weburl = os.path.join(HTTPS_KOJI_HUB, "koji")
         self.dry_run = dry_run
 
