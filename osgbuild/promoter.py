@@ -680,9 +680,9 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
     parser = OptionParser(helpstring)
 
     parser.add_option("-r", "--route", dest="routes", action="append",
-                      help="The promotion route to use. May be specified multiple times."
+                      help="The promotion route to use. May be specified multiple times. "
                       "If not specified, will use the %r route. Multiple routes may also "
-                      "be separated by commas." % DEFAULT_ROUTE)
+                      "be separated by commas" % DEFAULT_ROUTE)
     parser.add_option("-n", "--dry-run", action="store_true", default=False,
                       help="Do not promote, just show what would be done")
     parser.add_option("--ignore-rejects", dest="ignore_rejects", action="store_true", default=False,
