@@ -162,7 +162,7 @@ class RouteDiscovery(object):
     """For discovering and validating promotion routes.
     In addition to including the predefined routes (from STATIC_ROUTES),
     also looks for new-style osg routes (with tags of the form
-    osg-M.N-elX-{development,testing} or
+    osg-M.N-elX-{development,testing,contrib} or
     osg-upcoming-elX-{development,testing}), and discovers which dvers
     each route is good for.
 
@@ -258,10 +258,12 @@ class RouteDiscovery(object):
         valid_versioned_osg_routes = {}
         for osgver, dver in self._get_osgvers_dvers():
             devel_tag_hint = "osg-%s-%%s-development" % (osgver)
+            contrib_tag_hint = "osg-%s-%%s-contrib" % (osgver)
             testing_tag_hint = "osg-%s-%%s-testing" % (osgver)
             osgshortver = osgver.replace('.', '')
 
-            potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint, 'osg' + osgshortver)}
+            potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint, 'osg' + osgshortver),
+                                osgver + "-contrib": (devel_tag_hint, contrib_tag_hint, 'osg' + osgshortver)}
 
             for route_name, route in potential_routes.items():
                 self.validate_route_for_dver(route, dver)
@@ -287,46 +289,44 @@ class RouteDiscovery(object):
 
     def get_osg_route_aliases(self, valid_versioned_osg_routes):
         """Get a dict of route aliases for the OSG routes.
-        The aliases are:
-        - 'testing', for the newest testing route (e.g.  osg-3.2-%s-development
-          -> osg-3.2-%s-testing)
-        - one alias for the testing route for each osgver (e.g. '3.1' for
-          osg-3.1-%s-development -> osg-3.1-%s-testing)
+        These aliases are 'testing' and 'contrib'; they are aliases to the
+        newest testing and contrib routes (e.g.  'osg-3.2-%s-development').
 
         Assumes routes have been validated.
 
         """
         osg_route_aliases = {}
 
-        highest_route = self._get_highest_route('testing', valid_versioned_osg_routes)
-        osg_route_aliases['testing'] = valid_versioned_osg_routes[highest_route]
-
-        for osgver, _ in self._get_osgvers_dvers():
-            osg_route_aliases[osgver] = valid_versioned_osg_routes[osgver+'-testing']
+        for route_base in ['testing', 'contrib']:
+            highest_route = self._get_highest_route(route_base, valid_versioned_osg_routes)
+            if highest_route:
+                osg_route_aliases[route_base] = valid_versioned_osg_routes[highest_route]
+            else:
+                raise KojiTagsAreMessedUp("No OSG route found for %s" % route_base)
 
         return osg_route_aliases
 
-    @staticmethod
-    def _get_highest_route(route_base, valid_versioned_osg_routes):
+    # don't care that this can be a function: pylint: disable=R0201
+    def _get_highest_route(self, route_base, valid_osg_routes):
         """Helper for get_osg_route_aliases.
         Return the versioned OSG route matching route_base with the highest
         version. For example, if the available routes are '3.1-testing' and
         '3.2-testing', and route_base is 'testing', then this will return
         '3.2-testing'.
 
-        Raises KojiTagsAreMessedUp if no such route exists.
+        Returns None if no such route exists.
 
         """
         def _cmp_version(a, b): # pylint: disable=C0103,C0111
             return cmp(a.split('.'), b.split('.'))
 
         pattern = re.compile(r"(\d+\.\d+)-%s" % route_base)
-        osgvers_for_route_base = [pattern.match(x).group(1) for x in valid_versioned_osg_routes if pattern.match(x)]
+        osgvers_for_route_base = [pattern.match(x).group(1) for x in valid_osg_routes if pattern.match(x)]
         if osgvers_for_route_base:
             highest_osgver = sorted(osgvers_for_route_base, cmp=_cmp_version)[-1]
             return '%s-%s' % (highest_osgver, route_base)
         else:
-            raise KojiTagsAreMessedUp("No OSG route found for %s" % route_base)
+            return None
 
     def validate_route_for_dver(self, route, dver):
         """Check that both sides of a route exist for the given dver.
@@ -721,12 +721,6 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
                 expanded_routes.append(route)
         # User is allowed to specify the shortest unambiguous prefix of a route
         for route in expanded_routes:
-            # If the user specifies the name exactly, no matching should be done
-            # (avoids ambiguity when specifying the '3.1' route because of the
-            # existence of both '3.1' and '3.1-testing' routes).
-            if route in valid_routes:
-                matched_routes.append(route)
-                continue
             matching_routes = [x for x in valid_routes.keys() if x.startswith(route)]
             if len(matching_routes) > 1:
                 parser.error("Ambiguous route %r. Matching routes are: %s" % (route, ", ".join(matching_routes)))
@@ -794,8 +788,8 @@ def main(argv=None):
 
     for route in routes:
         printf("Promoting from %s to %s for dvers: %s",
-               valid_routes[route][0] % '*',
-               valid_routes[route][1] % '*',
+               valid_routes[route][0] % 'el*',
+               valid_routes[route][1] % 'el*',
                ", ".join(dvers))
     printf("Examining the following packages/builds:\n%s", "\n".join(["'" + x + "'" for x in pkgs_or_builds]))
 
