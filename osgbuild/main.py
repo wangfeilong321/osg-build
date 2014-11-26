@@ -178,10 +178,11 @@ def init(argv):
     buildopts = get_buildopts(options, task)
     set_loglevel(buildopts.get('loglevel', 'INFO'))
 
-    if len(args) < 2:
-        raise UsageError('Need package directories for this task!')
-
     package_dirs = args[1:]
+    if not package_dirs:
+        guess = guess_pkg_dir(os.getcwd())
+        log.info("Package dir not specified, using %s", guess)
+        package_dirs.append(guess)
 
     return (buildopts, package_dirs, task)
 # end of init()
@@ -770,6 +771,24 @@ def get_local_machine_dver():
         return match.group(1)
     except (TypeError, AttributeError):
         return None
+
+
+def guess_pkg_dir(start_dir):
+    guess_dir = os.path.realpath(os.path.expanduser(start_dir))
+    if os.path.basename(guess_dir) == 'osg' or os.path.basename(guess_dir) == 'upstream':
+        return os.path.dirname(guess_dir)
+    guess_dirlist = guess_dir.split('/')
+    if guess_dirlist[0] == '':
+        guess_dirlist[0] = '/'
+    for udir in [WD_RESULTS, WD_PREBUILD, WD_UNPACKED, WD_UNPACKED_TARBALL, WD_QUILT]:
+        try:
+            idx = guess_dirlist.index(udir)
+            return os.path.join(*guess_dirlist[0:idx])
+        except ValueError:
+            continue
+
+    return guess_dir
+
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))
