@@ -341,13 +341,10 @@ class safelist(list):
 
 def get_screen_columns():
     """Return the number of columns in the screen"""
-    screen_columns = os.environ.get('COLUMNS')
-    if not screen_columns:
-        try:
-            screen_columns = int(backtick("stty size").split()[1])
-        except TypeError:
-            screen_columns = 80
-    return screen_columns
+    try:
+        return int(os.environ.get('COLUMNS', backtick("stty size").split()[1])) or 80
+    except TypeError:
+        return 80
 
 try:
     from itertools import izip_longest # pylint: disable=E0611
