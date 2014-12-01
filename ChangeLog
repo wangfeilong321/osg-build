@@ -1,4 +1,8 @@
+* Mon Dec 1 2014 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.4.2
 - Don't require a cert when doing a mock build using a koji config
+- Change contrib promotion route to go from testing to contrib instead of
+  development to contrib (SOFTWARE-1682)
+- Use current dir as package dir if not specified (SOFTWARE-1424)
 
 * Tue Sep 30 2014 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.4.1
 - Text fixes
