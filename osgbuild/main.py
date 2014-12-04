@@ -320,6 +320,10 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         "If not specified, will build for all releases (koji task) or the "
         "platform you are running this on (other tasks)")
     parser.add_option(
+        "-t", "--target-arch",
+        help="The target architecture to build for."
+        " Ignored in non-scratch koji builds")
+    parser.add_option(
         "-v", "--verbose", action="store_const", const="debug", dest="loglevel",
         help="Display more information. Equivalent to --loglevel=debug")
     parser.add_option(
@@ -343,9 +347,6 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         "--distro-tag",
         help="The distribution tag to append to the end of the release. "
         "(Default: osg.el5, osg.el6 or osg.el7, depending on --redhat-release)")
-    rpmbuild_mock_group.add_option(
-        "-t", "--target-arch",
-        help="The target architecture to build for ")
 
     mock_group = OptionGroup(parser,
                              "mock task options")

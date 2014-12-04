@@ -108,6 +108,9 @@ class KojiInter(object):
         self.no_wait = opts['no_wait']
         self.regen_repos = opts['regen_repos']
         self.scratch = opts['scratch']
+        self.arch_override = opts.get('target_arch', None)
+        if self.arch_override and not self.scratch:
+            log.warning("target-arch ignored on non-scratch builds")
 
         self.cn = opts['kojilogin'] or None
 
@@ -149,7 +152,8 @@ class KojiInter(object):
                                             self.scratch,
                                             regen_repos=self.regen_repos,
                                             no_wait=self.no_wait,
-                                            background=self.background)
+                                            background=self.background,
+                                            arch_override=self.arch_override)
 
 
     def build_svn(self, url, rev):
@@ -159,7 +163,8 @@ class KojiInter(object):
                                        self.scratch,
                                        regen_repos=self.regen_repos,
                                        no_wait=self.no_wait,
-                                       background=self.background)
+                                       background=self.background,
+                                       arch_override=self.arch_override)
 
     def build_git(self, remote, rev, path):
         """Submit a GIT build"""
@@ -169,7 +174,8 @@ class KojiInter(object):
                                        self.scratch,
                                        regen_repos=self.regen_repos,
                                        no_wait=self.no_wait,
-                                       background=self.background)
+                                       background=self.background,
+                                       arch_override=self.arch_override)
 
     def mock_config(self, arch, tag, dist, outpath, name):
         """Request a mock config from koji-hub"""
@@ -231,13 +237,14 @@ class KojiShellInter(object):
         """build package at url for target.
 
         Using **kwargs so signature is same as KojiLibInter.build.
-        kwargs recognized: no_wait, regen_repos, background
+        kwargs recognized: no_wait, regen_repos, background, arch_override
 
         """
         log.debug("building " + url)
         no_wait = kwargs.get('no_wait', False)
         regen_repos = kwargs.get('regen_repos', False)
         background = kwargs.get('background', False)
+        arch_override = kwargs.get('arch_override', None)
         build_subcmd = ["build", target, url]
         if scratch:
             build_subcmd += ["--scratch"]
@@ -245,6 +252,8 @@ class KojiShellInter(object):
             build_subcmd += ["--nowait"]
         if background:
             build_subcmd += ["--background"]
+        if arch_override:
+            build_subcmd += ["--arch-override=" + arch_override]
         log.info("Calling koji to build the package for target %s", target)
 
         if not self.dry_run:
@@ -461,10 +470,13 @@ class KojiLibInter(object):
         """build package at url for target.
 
         Using **kwargs so signature is same as KojiShellInter.build.
-        kwargs recognized: priority, background
+        kwargs recognized: priority, background, arch_override
 
         """
         opts = { 'scratch': scratch }
+        arch_override = kwargs.get('arch_override', None)
+        if arch_override:
+            opts['arch_override'] = arch_override
         priority = kwargs.get('priority', None)
         if kwargs.get('background', False):
             priority = priority or 5 # Copied from koji cli
