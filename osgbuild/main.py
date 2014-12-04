@@ -364,7 +364,7 @@ rpmbuild     Build using rpmbuild(8) on the local machine
     mock_group.add_option(
         "--mock-config-from-koji",
         help="Use a mock config based on a koji buildroot (build tag, "
-        "such as osg-el5-build).")
+        "such as osg-3.2-el5-build).")
 
     koji_group = OptionGroup(parser,
                              "koji task options")
@@ -391,16 +391,18 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         action="callback",
         callback=parser_targetopts_callback,
         type="string",
-        help="The koji target to use for building. Default: "
-        "osg-el5, osg-el6 or osg-el7 depending on --redhat-release")
+        help="The koji target to use for building. "
+        "It is recommended to use the --repo option instead of this when the "
+        "desired repo is available.")
     koji_group.add_option(
         "--koji-tag",
         action="callback",
         callback=parser_targetopts_callback,
         type="string",
         help="The koji tag to add packages to. The special value TARGET "
-        "uses the destination tag defined in the koji target. Default: "
-        "osg-el5, osg-el6 or osg-el7 depending on --redhat-release")
+        "uses the destination tag defined in the koji target. "
+        "It is recommended to use the --repo option instead of this when the "
+        "desired repo is available.")
     koji_group.add_option(
         "--koji-target-and-tag", "--ktt",
         action="callback",
@@ -410,7 +412,9 @@ rpmbuild     Build using rpmbuild(8) on the local machine
         metavar='ARG',
         help="Specifies both the koji tag to add packages to and the target "
         "to use for building. '--ktt ARG' is equivalent to '--koji-target ARG "
-        " --koji-tag ARG'.")
+        " --koji-tag ARG'. "
+        "It is recommended to use the --repo option instead of this when the "
+        "desired repo is available.")
     koji_group.add_option(
         "--koji-wrapper", action="store_true", dest="koji_wrapper",
         help="Use the 'osg-koji' koji wrapper if using the 'shell' backend. "
