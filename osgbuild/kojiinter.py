@@ -6,6 +6,7 @@ import ConfigParser
 import logging
 import re
 import os
+import time
 import urllib2
 
 from osgbuild.constants import *
@@ -332,8 +333,14 @@ class KojiShellInter(object):
         if err:
             raise KojiError("koji tag-pkg failed with exit code " + str(err))
 
+
     def watch_tasks(self, *args):
-        pass
+        log.debug('Watching tasks not implemented in Shell backend')
+
+
+    def watch_tasks_with_retry(self, *args):
+        log.debug('Watching tasks not implemented in Shell backend')
+
 
 
 if HAVE_KOJILIB:
@@ -565,6 +572,23 @@ class KojiLibInter(object):
     @koji_error_wrap('watching tasks')
     def watch_tasks(self, tasks):
         return kojicli.watch_tasks(self.kojisession, tasks)
+
+
+    @koji_error_wrap('watching tasks')
+    def watch_tasks_with_retry(self, tasks, max_retries=10, retry_interval=20):
+        tries = 0
+        while True:
+            try:
+                return kojicli.watch_tasks(self.kojisession, tasks)
+            except KojiLib.ServerOffline, err:
+                # these have a large chance of being bogus
+                log.info("Got error from server: %s", err)
+                tries += 1
+                if tries < max_retries:
+                    log.info("Retrying in %d seconds", retry_interval)
+                    time.sleep(retry_interval)
+                else:
+                    raise
 
 
     @koji_error_wrap('downloading results')
