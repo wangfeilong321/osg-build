@@ -580,7 +580,7 @@ class KojiLibInter(object):
         while True:
             try:
                 return kojicli.watch_tasks(self.kojisession, tasks)
-            except KojiLib.ServerOffline, err:
+            except kojilib.ServerOffline, err:
                 # these have a large chance of being bogus
                 log.info("Got error from server: %s", err)
                 tries += 1
