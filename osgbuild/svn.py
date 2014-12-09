@@ -6,6 +6,35 @@ from osgbuild.constants import SVN_ROOT, SVN_REDHAT_PATH, SVN_RESTRICTED_BRANCHE
 from osgbuild.error import Error, SVNError, UsageError
 from osgbuild import utils
 
+
+def is_svn(package_dir):
+    """Determine whether a given directory is part of an SVN repo."""
+    # If package_dir is a URL, not a directory, then we can't cd into it to
+    # check. Assume True for now.
+    if utils.is_url(package_dir):
+        return True
+    # TODO: Allow specifying a git URL to build from.
+    pwd = os.getcwd()
+    try:
+        try:
+            os.chdir(package_dir)
+        except OSError, ose:
+            if ose.errno == errno.ENOENT:
+                raise Error("%s is not a valid package directory\n(%s)" % (package_dir, ose))
+        command = ["svn", "info"]
+        try:
+            err = utils.sbacktick(command, clocale=True, err2out=True)[1]
+        except OSError, ose:
+            if ose.errno != errno.ENOENT:
+                raise
+            err = 1
+        if err:
+            return False
+    finally:
+        os.chdir(pwd)
+    return True
+
+
 def is_uncommitted(package_dir):
     """Return True if there are uncommitted changes in the SVN working dir."""
     if utils.is_url(package_dir):
