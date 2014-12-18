@@ -51,7 +51,7 @@ dist:
 
 afsdist: dist
 	mkdir -p $(AFS_SOFTWARE_DIR)/$(VERSION)
-	mv -f $(NAME_VERSION).tar.gz $(AFS_SOFTWARE_DIR)/$(VERSION)/
+	mv -i $(NAME_VERSION).tar.gz $(AFS_SOFTWARE_DIR)/$(VERSION)/
 	rm -rf $(NAME_VERSION)
 
 release: dist
@@ -61,7 +61,7 @@ release: dist
 		exit 1;                                                        \
 	fi
 	mkdir -p $(DESTDIR)/$(NAME)/$(VERSION)
-	mv -f $(NAME_VERSION).tar.gz $(DESTDIR)/$(NAME)/$(VERSION)/
+	mv -i $(NAME_VERSION).tar.gz $(DESTDIR)/$(NAME)/$(VERSION)/
 	rm -rf $(NAME_VERSION)
 
 check:
