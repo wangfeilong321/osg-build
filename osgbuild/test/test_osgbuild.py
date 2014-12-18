@@ -79,6 +79,8 @@ class XTestCase(unittest.TestCase):
     unittest.TestCase
 
     """
+    # unittest.TestCase does not have a failureException in 2.4
+    failureException = getattr(super, 'failureException', AssertionError)
 
     # Code from unittest in Python 2.7 (c) Python Software Foundation
     def assertRegexpMatches(self, text, regexp, msg=None):
@@ -88,7 +90,7 @@ class XTestCase(unittest.TestCase):
         if not regexp.search(text):
             msg = msg or "Regexp didn't match"
             msg = '%s: %r not found in %r' % (msg, regexp.pattern, text)
-            raise super.failureException(msg)
+            raise self.failureException(msg)
 
     # Code from unittest in Python 2.7 (c) Python Software Foundation
     def assertNotRegexpMatches(self, text, regexp, msg=None):
@@ -99,7 +101,7 @@ class XTestCase(unittest.TestCase):
         if match:
             msg = msg or "Regexp matched"
             msg = '%s: %r matches %r in %r' % (msg, text[match.start():match.end()], regexp.pattern, text)
-            raise super.failureException(msg)
+            raise self.failureException(msg)
 
 
 class TestLint(XTestCase):
