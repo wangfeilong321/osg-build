@@ -402,9 +402,22 @@ class TestKojiLong(XTestCase):
     def setUp(self):
         self.pkg_dir = common_setUp(opj(TRUNK, "koji"),
                                     "{2012-01-25}")
+        self.arch_pkg_dir = common_setUp(opj(TRUNK, "osg-ce"),
+                                    "{2014-12-17}")
 
     def test_koji_build(self):
         checked_osg_build(["koji", "--el5", "--scratch", self.pkg_dir, "--wait"])
+
+    def test_koji_build_with_target_arch(self):
+        output = backtick_osg_build(["koji", "--el6", "--scratch", "--target-arch=x86_64", self.arch_pkg_dir, "--wait"])
+        self.assertNotRegexpMatches(
+            output,
+            r".*buildArch [(][^)]+?i[3-6]86[)]",
+            "Building for 32-bit platform even though x86_64 arch was requested")
+        self.assertRegexpMatches(
+            output,
+            r".*buildArch [(][^)]+?x86_64[)]",
+            "Not building for 64-bit platform even though x86_64 arch was requested")
 
 
 class TestMisc(XTestCase):
