@@ -143,6 +143,7 @@ class SRPMBuild(object):
         if match:
             srpm = match.group(1).strip()
             if os.path.isfile(srpm):
+                log.debug("Created SRPM: %s", srpm)
                 return srpm
         raise OSGPrebuildError(err_msg_prefix +
                                "Unable to find resulting SRPM.")
