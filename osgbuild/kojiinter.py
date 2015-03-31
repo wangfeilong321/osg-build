@@ -112,6 +112,7 @@ class KojiInter(object):
         self.arch_override = opts.get('target_arch', None)
         if self.arch_override and not self.scratch:
             log.warning("target-arch ignored on non-scratch builds")
+            self.arch_override = None
 
         self.cn = opts['kojilogin'] or None
 
