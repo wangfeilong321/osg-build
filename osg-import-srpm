@@ -104,6 +104,7 @@ def make_svn_tree(srpm, url, extract_spec=False, diff_spec=False, provider=None)
         unslurp(source_filename, source_contents)
     else:
         unslurp(source_filename, source_contents)
+        # TODO Check the path we're trying to add hasn't been added yet
         checked_call(["svn", "add", source_filename])
     if len(glob.glob(opj(upstream_dir, "*.source"))) > 1:
         print "More than one .source file found in upstream dir."
@@ -117,11 +118,12 @@ def make_svn_tree(srpm, url, extract_spec=False, diff_spec=False, provider=None)
         else:
             old_dir = getcwd() # pushd
             chdir(osg_dir)
-            for s in glob.glob("*.spec"):
+            specs = list(glob.glob("*.spec"))
+            for s in specs:
                 move(s, s + ".old")
             checked_call("rpm2cpio '%s' | cpio -ivd '*.spec'" % abs_srpm, shell=True)
-            if exists(s + ".old"):
-                for s in glob.glob("*.spec"):
+            for s in specs:
+                if exists(s + ".old") and exists(s):
                     move(s, s + ".new")
                     print ("Old spec file found. Examine difference " +
                            "between %s.old and %s.new and manually merge " +
