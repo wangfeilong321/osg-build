@@ -575,7 +575,7 @@ class KojiLibInter(object):
 
 
     @koji_error_wrap('watching tasks')
-    def watch_tasks_with_retry(self, tasks, max_retries=10, retry_interval=20):
+    def watch_tasks_with_retry(self, tasks, max_retries=20, retry_interval=20):
         tries = 0
         while True:
             try:
