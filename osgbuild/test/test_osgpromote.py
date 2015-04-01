@@ -1,5 +1,8 @@
 #!/usr/bin/env python2
 
+import sys
+sys.path.insert(0, '.')
+
 import logging
 import unittest
 import StringIO
@@ -17,6 +20,9 @@ TAGS = ['el6-gt52',
         'hcc-el6',
         'hcc-el6-release',
         'hcc-el6-testing',
+        'hcc-el7',
+        'hcc-el7-release',
+        'hcc-el7-testing',
         'osg-3.1-el5-contrib',
         'osg-3.1-el5-development',
         'osg-3.1-el5-prerelease',
@@ -37,6 +43,21 @@ TAGS = ['el6-gt52',
         'osg-3.2-el6-prerelease',
         'osg-3.2-el6-release',
         'osg-3.2-el6-testing',
+        'osg-3.2-el7-contrib',
+        'osg-3.2-el7-development',
+        'osg-3.2-el7-prerelease',
+        'osg-3.2-el7-release',
+        'osg-3.2-el7-testing',
+        'osg-3.3-el7-contrib',
+        'osg-3.3-el7-development',
+        'osg-3.3-el7-prerelease',
+        'osg-3.3-el7-release',
+        'osg-3.3-el7-testing',
+        'osg-3.3-el6-contrib',
+        'osg-3.3-el6-development',
+        'osg-3.3-el6-prerelease',
+        'osg-3.3-el6-release',
+        'osg-3.3-el6-testing',
         'osg-el5',
         'osg-el6',
         'osg-upcoming-el5-development',
@@ -116,6 +137,17 @@ class MockKojiHelper(promoter.KojiHelper):
                 {'nvr': 'reject-distinct-dvers-2-1.osg32.el6', 'latest': True},
                 {'nvr': 'reject-distinct-repos-2-1.osg32.el6', 'latest': True},
                 ],
+            'osg-3.3-el6-development': [
+                {'nvr': 'goodpkg-1999-1.osg33.el6', 'latest': False},
+                {'nvr': 'goodpkg-2000-1.osg33.el6', 'latest': True},
+                {'nvr': 'reject-distinct-dvers-2-1.osg33.el6', 'latest': True},
+                {'nvr': 'reject-distinct-repos-2-1.osg33.el6', 'latest': True},
+                ],
+            'osg-3.3-el7-development': [
+                {'nvr': 'goodpkg-1999-1.osg33.el7', 'latest': False},
+                {'nvr': 'goodpkg-2000-1.osg33.el7', 'latest': True},
+                {'nvr': 'reject-distinct-dvers-1-1.osg33.el7', 'latest': True},
+                ],
             }
     tagged_packages_by_tag = {
             'osg-3.1-el5-development': [
@@ -130,6 +162,13 @@ class MockKojiHelper(promoter.KojiHelper):
                 'goodpkg',
                 'reject-distinct-dvers',
                 'reject-distinct-repos'],
+            'osg-3.3-el6-development': [
+                'goodpkg',
+                'reject-distinct-dvers',
+                'reject-distinct-repos'],
+            'osg-3.3-el7-development': [
+                'goodpkg',
+                'reject-distinct-dvers'],
             }
 
     want_success = True
@@ -171,6 +210,7 @@ class MockKojiHelper(promoter.KojiHelper):
 
 class TestPromoter(unittest.TestCase):
     dvers = ['el5', 'el6']
+    dvers_33 = ['el6', 'el7']
 
     def setUp(self):
         self.route_discovery = promoter.RouteDiscovery(TAGS)

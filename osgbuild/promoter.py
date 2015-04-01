@@ -20,6 +20,13 @@ except ImportError:
 
 DEFAULT_ROUTE = 'testing'
 DVERS_OFF_BY_DEFAULT = ['el7']
+DEFAULT_OSGVER = '3.2'
+DVERS_BY_OSGVER = {
+    '3.1': ['el5', 'el6'],
+    '3.2': ['el5', 'el6'],
+    '3.3': ['el6', 'el7'],
+}
+
 
 # logging. Can't use root logger because its loglevel can't be changed once set
 log = logging.getLogger('osgpromote')
@@ -219,7 +226,7 @@ class RouteDiscovery(object):
 
     def get_dvers_for_route(self, route):
         """Return the dvers (as a list of strings) a route supports"""
-        tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[0]))
+        tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[1]))
         available_tags = [x for x in self.tags if tag_pattern.match(x)]
         dver_pattern = re.compile(r'(el\d+)')
         available_dvers = []
@@ -290,7 +297,7 @@ class RouteDiscovery(object):
     def get_osg_route_aliases(self, valid_versioned_osg_routes):
         """Get a dict of route aliases for the OSG routes.
         These aliases are 'testing' and 'contrib'; they are aliases to the
-        newest testing and contrib routes (e.g.  'osg-3.2-%s-development').
+        default testing and contrib routes (e.g.  'osg-3.2-%s-development').
 
         Assumes routes have been validated.
 
@@ -298,35 +305,10 @@ class RouteDiscovery(object):
         osg_route_aliases = {}
 
         for route_base in ['testing', 'contrib']:
-            highest_route = self._get_highest_route(route_base, valid_versioned_osg_routes)
-            if highest_route:
-                osg_route_aliases[route_base] = valid_versioned_osg_routes[highest_route]
-            else:
-                raise KojiTagsAreMessedUp("No OSG route found for %s" % route_base)
+            default_route = '%s-%s' % (DEFAULT_OSGVER, route_base)
+            osg_route_aliases[route_base] = valid_versioned_osg_routes[default_route]
 
         return osg_route_aliases
-
-    # don't care that this can be a function: pylint: disable=R0201
-    def _get_highest_route(self, route_base, valid_osg_routes):
-        """Helper for get_osg_route_aliases.
-        Return the versioned OSG route matching route_base with the highest
-        version. For example, if the available routes are '3.1-testing' and
-        '3.2-testing', and route_base is 'testing', then this will return
-        '3.2-testing'.
-
-        Returns None if no such route exists.
-
-        """
-        def _cmp_version(a, b): # pylint: disable=C0103,C0111
-            return cmp(a.split('.'), b.split('.'))
-
-        pattern = re.compile(r"(\d+\.\d+)-%s" % route_base)
-        osgvers_for_route_base = [pattern.match(x).group(1) for x in valid_osg_routes if pattern.match(x)]
-        if osgvers_for_route_base:
-            highest_osgver = sorted(osgvers_for_route_base, cmp=_cmp_version)[-1]
-            return '%s-%s' % (highest_osgver, route_base)
-        else:
-            return None
 
     def validate_route_for_dver(self, route, dver):
         """Check that both sides of a route exist for the given dver.
@@ -767,7 +749,14 @@ def main(argv=None):
 
     kojihelper = KojiHelper(False)
 
-    route_discovery = RouteDiscovery(kojihelper.get_tags())
+    tags = kojihelper.get_tags()
+    # HACK
+    try:
+        tags.remove('osg-3.2-el7-development')
+        tags.remove('osg-3.2-el7-testing')
+        tags.remove('osg-3.2-el7-contrib')
+    except ValueError: pass
+    route_discovery = RouteDiscovery(tags)
     valid_routes = route_discovery.get_routes()
 
     options, pkgs_or_builds = parse_cmdline_args(kojihelper.get_all_dvers(), valid_routes, argv)
