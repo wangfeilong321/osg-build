@@ -1,10 +1,11 @@
-* Wed Apr 1 2015 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.4.4
+* Tue Apr 14 2015 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.4.4
 - Add log line with destination SRPM path for osg-build prebuild
 - Increase max retries for watching koji tasks
 - Actually ignore target-arch on non-scratch builds
 - Fix a few NameErrors in osg-import-srpm
 - Add some hackery to keep osg-promote working even after the 3.3 tags have
   been created
+- Fix missing import in svn.py (SOFTWARE-1870)
 
 * Wed Dec 17 2014 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.4.3
 - Add retry loop to watching tasks (SOFTWARE-1343)
