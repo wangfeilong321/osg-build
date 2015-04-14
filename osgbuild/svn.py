@@ -1,6 +1,7 @@
 """Helper functions for an SVN build."""
 import re
 import os
+import errno
 
 from osgbuild.constants import SVN_ROOT, SVN_REDHAT_PATH, SVN_RESTRICTED_BRANCHES, KOJI_RESTRICTED_TARGETS
 from osgbuild.error import Error, SVNError, UsageError
