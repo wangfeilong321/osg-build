@@ -117,6 +117,13 @@ REPO_HINTS_STATIC = {
 }
 
 DEFAULT_DVERS = ['5', '6']
+DEFAULT_DVERS_BY_REPO = {
+    '3.2': ['5', '6'],
+    'osg-3.2': ['5', '6'],
+    '3.3': ['6', '7'],
+    'osg-3.3': ['6', '7'],
+    'internal': ['5', '6', '7'],
+}
 DVERS = DEFAULT_BUILDOPTS_BY_DVER.keys()
 
 BUGREPORT_EMAIL = "osg-software@opensciencegrid.org"

@@ -665,13 +665,23 @@ def get_buildopts(options, task):
         for dver in DVERS:
             buildopts['targetopts_by_dver'][dver] = DEFAULT_BUILDOPTS_BY_DVER[dver].copy()
 
+    for dver in DVERS:
+        if 'repo' in buildopts['targetopts_by_dver'][dver]:
+            repo = buildopts['targetopts_by_dver'][dver]['repo']
+            break
+    else:
+        repo = buildopts['repo']
+
     # Which distro versions are we building for? If not specified on the
     # command line, either build for all (koji) or the dver of the local machine
     # (others)
     enabled_dvers = getattr(options, 'enabled_dvers', None)
     if not enabled_dvers:
         if task == 'koji':
-            buildopts['enabled_dvers'] = set(DEFAULT_DVERS)
+            if repo in DEFAULT_DVERS_BY_REPO:
+                buildopts['enabled_dvers'] = set(DEFAULT_DVERS_BY_REPO[repo])
+            else:
+                buildopts['enabled_dvers'] = set(DEFAULT_DVERS)
         else:
             buildopts['enabled_dvers'] = set([get_local_machine_dver()])
 
