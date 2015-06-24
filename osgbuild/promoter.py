@@ -267,10 +267,12 @@ class RouteDiscovery(object):
             devel_tag_hint = "osg-%s-%%s-development" % (osgver)
             contrib_tag_hint = "osg-%s-%%s-contrib" % (osgver)
             testing_tag_hint = "osg-%s-%%s-testing" % (osgver)
+            prerelease_tag_hint = "osg-%s-%%s-prerelease" % (osgver)
             osgshortver = osgver.replace('.', '')
 
             potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint, 'osg' + osgshortver),
-                                osgver + "-contrib": (testing_tag_hint, contrib_tag_hint, 'osg' + osgshortver)}
+                                osgver + "-contrib": (testing_tag_hint, contrib_tag_hint, 'osg' + osgshortver),
+                                osgver + "-prerelease": (testing_tag_hint, prerelease_tag_hint, 'osg' + osgshortver)}
 
             for route_name, route in potential_routes.items():
                 self.validate_route_for_dver(route, dver)
@@ -304,7 +306,7 @@ class RouteDiscovery(object):
         """
         osg_route_aliases = {}
 
-        for route_base in ['testing', 'contrib']:
+        for route_base in ['testing', 'contrib', 'prerelease']:
             default_route = '%s-%s' % (DEFAULT_OSGVER, route_base)
             osg_route_aliases[route_base] = valid_versioned_osg_routes[default_route]
 
@@ -755,6 +757,7 @@ def main(argv=None):
         tags.remove('osg-3.2-el7-development')
         tags.remove('osg-3.2-el7-testing')
         tags.remove('osg-3.2-el7-contrib')
+        tags.remove('osg-3.2-el7-prerelease')
     except ValueError: pass
     route_discovery = RouteDiscovery(tags)
     valid_routes = route_discovery.get_routes()
