@@ -1,5 +1,6 @@
-* ??? ??? ?? 2015 Mátyás Selmeci <matyas@cs.wisc.edu> - ?.?.?
-- Build for el6 and el7 for OSG 3.3 by default (instead of el5 and el6)
+* Thu Jul 2 2015 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.5.0
+- Build for el6 and el7 for OSG 3.3 by default (instead of el5 and el6) (SOFTWARE-1902)
+- Allow promotion to prerelease for osg-promote
 
 * Tue Apr 14 2015 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.4.4
 - Add log line with destination SRPM path for osg-build prebuild
