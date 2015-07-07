@@ -98,6 +98,7 @@ class Reject(object):
 STATIC_ROUTES = {
     "hcc": Route("hcc-%s-testing", "hcc-%s-release", "hcc"),
     "upcoming": Route("osg-upcoming-%s-development", "osg-upcoming-%s-testing", "osgup"),
+    "upcoming-prerelease": Route("osg-upcoming-%s-testing", "osg-upcoming-%s-prerelease", "osgup"),
    }
 
 #
@@ -658,7 +659,7 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
     helpstring = "%prog [-r|--route ROUTE]... [options] <packages or builds>"
     helpstring += "\n\nValid routes are:\n"
     for route in sorted(valid_routes.keys()):
-        helpstring += " - %-14s: %-30s -> %s\n" % (
+        helpstring += " - %-20s: %-26s -> %s\n" % (
             route, valid_routes[route][0] % '*', valid_routes[route][1] % '*')
 
     parser = OptionParser(helpstring)
