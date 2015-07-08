@@ -706,6 +706,10 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
                 expanded_routes.append(route)
         # User is allowed to specify the shortest unambiguous prefix of a route
         for route in expanded_routes:
+            if route in valid_routes.keys():
+                # exact match
+                matched_routes.append(route)
+                continue
             matching_routes = [x for x in valid_routes.keys() if x.startswith(route)]
             if len(matching_routes) > 1:
                 parser.error("Ambiguous route %r. Matching routes are: %s" % (route, ", ".join(matching_routes)))
