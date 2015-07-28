@@ -8,6 +8,10 @@ import sys
 import logging
 import ConfigParser
 
+if sys.version_info < (2, 6):
+    sys.stderr.write("osg-promote requires Python 2.6 or greater")
+    sys.exit(1)
+
 from osgbuild import constants
 from osgbuild import kojiinter
 from osgbuild import utils
@@ -40,6 +44,7 @@ log_consolehandler.setFormatter(log_formatter)
 log.addHandler(log_consolehandler)
 log.propagate = False
 
+
 class KojiTagsAreMessedUp(Exception):
     """Raised when Koji tags are in an inconsistent or unusable state.
 
@@ -49,7 +54,8 @@ class KojiTagsAreMessedUp(Exception):
 
 
 Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo', 'dvers', 'extra_dvers'])
-#Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo'])
+# Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo'])
+
 
 class Build(object):
     def __init__(self, name, version, release_no_dist, repo, dver):
@@ -90,6 +96,7 @@ class Build(object):
 class Reject(object):
     REASON_DISTINCT_ACROSS_DISTS = "Build versions matching %(pkg_or_build)s distinct across dist tags"
     REASON_NOMATCHING_FOR_DIST = "No build matching %(pkg_or_build)s for dist %(dist)s"
+
     def __init__(self, pkg_or_build, dist, reason):
         self.pkg_or_build = pkg_or_build
         self.dist = dist
@@ -102,12 +109,14 @@ class Reject(object):
 # Utility functions
 #
 
+
 def any(iterable): # Don't warn about redefining this. pylint: disable=W0622
     """True if any member of 'iterable' is true, False otherwise"""
     for element in iterable:
         if element:
             return True
     return False
+
 
 def split_nvr(build):
     """Split an NVR into a (Name, Version, Release) tuple"""
@@ -116,6 +125,7 @@ def split_nvr(build):
         return (match.group('name'), match.group('version'), match.group('release'))
     else:
         return ('', '', '')
+
 
 def split_repo_dver(build, known_repos=None):
     """Split out the dist tag from the NVR of a build, returning a tuple
@@ -169,6 +179,7 @@ def _parse_list_str(list_str):
     # remove empty strings from the list
     filtered_items = filter(None, items)
     return filtered_items
+
 
 # TODO EC
 def load_routes(inifile):
@@ -224,7 +235,6 @@ class Promoter(object):
         self.dvers = dvers
         self.kojihelper = kojihelper
         self.repos = set(route.repo for route in self.routes)
-
 
     def add_promotion(self, pkg_or_build, ignore_rejects=False):
         """Run get_builds() for 'pkg_or_build', using from_tag_hint as the
@@ -499,7 +509,6 @@ class KojiHelper(kojiinter.KojiLibInter):
             self.watch_tasks([self.regen_repo(tag)])
 
 
-
 #
 # JIRA writing
 #
@@ -522,9 +531,11 @@ def write_jira(kojihelper, promoted_builds, routes, out=None):
     out.write("Promoted %s to %s\n" % (", ".join(sorted(nvrs_no_dist)), ", ".join([x.to_tag_hint % "el*" for x in routes])))
     out.write(table)
 
+
 #
 # Command line and main
 #
+
 def format_valid_routes(valid_routes):
     formatted = ""
     for route_name in sorted(valid_routes.keys()):
@@ -562,11 +573,11 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
     parser.add_option("-y", "--assume-yes", action="store_true", default=False,
                       help="Do not prompt before promotion")
     for dver in all_dvers:
-        parser.add_option("--%s-only" % dver, action="store_true", default=False,
+        parser.add_option("--%s-only" % dver, action="store_const", dest="only_dver", const=dver, default=None,
                           help="Promote only %s builds" % dver)
-        parser.add_option("--no-%s" % dver, "--no%s" % dver, dest="no_dvers", action="append_const", const=dver,
+        parser.add_option("--no-%s" % dver, "--no%s" % dver, dest="no_dvers", action="append_const", const=dver, default=[],
                           help="Do not promote %s builds, even if they are default for the route(s)" % dver)
-        parser.add_option("--%s" % dver, dest="extra_dvers", action="append_const", const=dver,
+        parser.add_option("--%s" % dver, dest="extra_dvers", action="append_const", const=dver, default=[],
                           help="Promote %s builds if the route(s) support them" % dver)
 
     if len(argv) < 2:
@@ -574,10 +585,6 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
         sys.exit(2)
 
     options, args = parser.parse_args(argv[1:])
-
-    options.dvers = _get_wanted_dvers(all_dvers, parser, options)
-    if not options.dvers:
-        parser.error("No dvers found to promote")
 
     options.routes = _get_wanted_routes(valid_routes, parser, options)
 
@@ -641,6 +648,12 @@ def _get_wanted_routes(valid_routes, parser, options):
     return matched_routes
 
 
+def _print_route_dvers(routename, route):
+    printf("The default dver(s) for %s are: %s", routename, ", ".join(route.dvers))
+    if route.extra_dvers:
+        printf("The route optionally supports these dver(s): %s", ", ".join(route.extra_dvers))
+
+
 def main(argv=None):
     if argv is None:
         argv = sys.argv
@@ -651,31 +664,25 @@ def main(argv=None):
 
     options, pkgs_or_builds = parse_cmdline_args(kojihelper.get_all_dvers(), valid_routes, argv)
 
-    dvers = options.dvers
-    routes = options.routes
+    routenames = options.routes
 
-    for route in routes:
-        dvers_for_route = route.dvers + route.extra_dvers
-        for dver in dvers:
-            if dver not in dvers_for_route:
-                printf("The dver %s is not available for route %s.", dver, route)
-                printf("The default dvers for that route are: %s", ", ".join(route.dvers))
-                if route.extra_dvers:
-                    printf("The route optionally supports these dver(s): %s", ", ".join(route.extra_dvers))
-                sys.exit(1)
+    route_dvers_pairs = _get_route_dvers_pairs(routenames, valid_routes, options.extra_dvers, options.no_dvers,
+                                               options.only_dver)
 
     if not options.dry_run:
         kojihelper.login_to_koji()
 
-    for route in routes:
+    for route, dvers in route_dvers_pairs:
         printf("Promoting from %s to %s for dvers: %s",
-               valid_routes[route][0] % 'el*',
-               valid_routes[route][1] % 'el*',
-               ", ".join(dvers))
+               route.from_tag_hint % 'el*',
+               route.to_tag_hint % 'el*',
+               ", ".join(sorted(dvers)))
     printf("Examining the following packages/builds:\n%s", "\n".join(["'" + x + "'" for x in pkgs_or_builds]))
 
-    real_routes = [valid_routes[route] for route in routes]
-    promoter = Promoter(kojihelper, real_routes, dvers)
+    dvers = set()
+    for _, x in route_dvers_pairs:
+        dvers.update(x)
+    promoter = Promoter(kojihelper, [x[0] for x in route_dvers_pairs], dvers)
     for pkgb in pkgs_or_builds:
         promoter.add_promotion(pkgb, options.ignore_rejects)
 
@@ -711,6 +718,37 @@ def main(argv=None):
 
     return 0
 
+
+def _get_route_dvers_pairs(routenames, valid_routes, extra_dvers, no_dvers, only_dver):
+    route_dvers_pairs = []
+
+    for routename in routenames:
+        route = valid_routes[routename]
+
+        if only_dver:
+            if only_dver in route.dvers or only_dver in route.extra_dvers:
+                route_dvers_pairs.append((route, set([only_dver])))
+            else:
+                printf("The dver %s is not available for route %s.", only_dver, routename)
+                _print_route_dvers(routename, route)
+                sys.exit(2)
+            continue
+
+        wanted_dvers_for_route = set(route.dvers)
+        for extra_dver in extra_dvers:
+            if extra_dver in route.extra_dvers:
+                wanted_dvers_for_route.add(extra_dver)
+        for no_dver in no_dvers:
+            wanted_dvers_for_route.discard(no_dver)
+        if not wanted_dvers_for_route:
+            printf("All dvers for route %s have been disabled.")
+            _print_route_dvers(routename, route)
+            sys.exit(2)
+
+        route_dvers_pairs.append((route, wanted_dvers_for_route))
+
+    return route_dvers_pairs
+
+
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
-
