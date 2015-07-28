@@ -19,10 +19,7 @@ from osgbuild import utils
 from osgbuild.utils import printf, print_table
 from optparse import OptionParser
 
-try:
-    from collections import namedtuple
-except ImportError:
-    from osgbuild.namedtuple import namedtuple
+from collections import namedtuple
 
 DEFAULT_ROUTE = 'testing'
 INIFILE = 'promoter.ini'
@@ -123,9 +120,9 @@ def split_nvr(build):
     """Split an NVR into a (Name, Version, Release) tuple"""
     match = re.match(r"(?P<name>.+)-(?P<version>[^-]+)-(?P<release>[^-]+)$", build)
     if match:
-        return (match.group('name'), match.group('version'), match.group('release'))
+        return match.group('name'), match.group('version'), match.group('release')
     else:
-        return ('', '', '')
+        return '', '', ''
 
 
 def split_repo_dver(build, known_repos=None):
@@ -171,7 +168,7 @@ def split_repo_dver(build, known_repos=None):
         groupdict = match.groupdict()
         build_no_dist, repo, dver = groupdict['build_no_dist'], groupdict.get('repo', ''), groupdict.get('dver', '')
 
-    return (build_no_dist, repo, dver)
+    return build_no_dist, repo, dver
 
 
 def _parse_list_str(list_str):
@@ -440,7 +437,7 @@ class KojiHelper(kojiinter.KojiLibInter):
     def get_build_uri(self, build_nvr):
         """Return a URI to the kojiweb page of the build with the given NVR"""
         buildinfo = self.koji_get_build(build_nvr)
-        return ("%s/koji/buildinfo?buildID=%d" % (constants.HTTPS_KOJI_HUB, int(buildinfo['id'])))
+        return "%s/koji/buildinfo?buildID=%d" % (constants.HTTPS_KOJI_HUB, int(buildinfo['id']))
 
     def koji_get_build(self, build_nvr):
         return self.kojisession.getBuild(build_nvr)
@@ -610,35 +607,6 @@ def _get_wanted_dvers(all_dvers, parser, options):
             wanted_dvers.remove(dver)
 
     return wanted_dvers
-
-
-def _get_wanted_routes(valid_routes, parser, options):
-    matched_routes = []
-
-    routes = options.routes
-    if routes:
-        expanded_routes = []
-        for route in routes:
-            if route.find(',') != -1:  # We have a comma -- this means multiple routes.
-                expanded_routes.extend(route.split(','))
-            else:
-                expanded_routes.append(route)
-        # User is allowed to specify the shortest unambiguous prefix of a route
-        for route in expanded_routes:
-            if route in valid_routes.keys():
-                # exact match
-                matched_routes.append(route)
-                continue
-            matching_routes = [x for x in valid_routes.keys() if x.startswith(route)]
-            if len(matching_routes) > 1:
-                parser.error("Ambiguous route %r. Matching routes are: %s" % (route, ", ".join(matching_routes)))
-            elif not matching_routes:
-                parser.error("Invalid route %r. Valid routes are: %s" % (route, ", ".join(valid_routes.keys())))
-            else:
-                matched_routes.append(matching_routes[0])
-    else:
-        matched_routes = [DEFAULT_ROUTE]
-    return matched_routes
 
 
 def _print_route_dvers(routename, route):
