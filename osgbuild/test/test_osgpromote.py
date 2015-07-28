@@ -1,4 +1,5 @@
 #!/usr/bin/env python2
+from __future__ import print_function
 
 import sys
 sys.path.insert(0, '.')
@@ -134,23 +135,27 @@ class FakeKojiHelper(promoter.KojiHelper):
                 {'nvr': 'goodpkg-1999-1.osg32.el5', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg32.el5', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-1-1.osg32.el5', 'latest': True},
+                {'nvr': 'disjunct-dvers-in-repo-1.osg32.el5', 'latest': True},
                 ],
             'osg-3.2-el6-development': [
                 {'nvr': 'goodpkg-1999-1.osg32.el6', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg32.el6', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-2-1.osg32.el6', 'latest': True},
                 {'nvr': 'reject-distinct-repos-2-1.osg32.el6', 'latest': True},
+                {'nvr': 'disjunct-dvers-in-repo-1.osg32.el6', 'latest': True},
                 ],
             'osg-3.3-el6-development': [
                 {'nvr': 'goodpkg-1999-1.osg33.el6', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg33.el6', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-2-1.osg33.el6', 'latest': True},
                 {'nvr': 'reject-distinct-repos-2-1.osg33.el6', 'latest': True},
+                {'nvr': 'disjunct-dvers-in-repo-1.osg33.el6', 'latest': True},
                 ],
             'osg-3.3-el7-development': [
                 {'nvr': 'goodpkg-1999-1.osg33.el7', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg33.el7', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-1-1.osg33.el7', 'latest': True},
+                {'nvr': 'disjunct-dvers-in-repo-1.osg33.el7', 'latest': True},
                 ],
             }
     tagged_packages_by_tag = {
@@ -161,18 +166,22 @@ class FakeKojiHelper(promoter.KojiHelper):
                 'reject-distinct-repos'],
             'osg-3.2-el5-development': [
                 'goodpkg',
-                'reject-distinct-dvers'],
+                'reject-distinct-dvers',
+                'disjunct-dvers-in-repo'],
             'osg-3.2-el6-development': [
                 'goodpkg',
                 'reject-distinct-dvers',
-                'reject-distinct-repos'],
+                'reject-distinct-repos',
+                'disjunct-dvers-in-repo'],
             'osg-3.3-el6-development': [
                 'goodpkg',
                 'reject-distinct-dvers',
-                'reject-distinct-repos'],
+                'reject-distinct-repos',
+                'disjunct-dvers-in-repo'],
             'osg-3.3-el7-development': [
                 'goodpkg',
-                'reject-distinct-dvers'],
+                'reject-distinct-dvers',
+                'disjunct-dvers-in-repo'],
             }
 
     want_success = True
@@ -222,6 +231,7 @@ class TestPromoter(unittest.TestCase):
         self.testing_route = self.routes['testing']
         self.testing_promoter = self._make_promoter([self.testing_route])
         self.multi_routes = [self.routes['3.1-testing'], self.routes['3.2-testing']]
+        self.multi_routes_32_and_33 = [self.routes['3.2-testing'], self.routes['3.3-testing']]
 
     def _make_promoter(self, routes, dvers=None):
         dvers = dvers or TestPromoter.dvers
@@ -317,6 +327,16 @@ class TestPromoter(unittest.TestCase):
                 self.assertTrue(tag in promoted_builds)
                 self.assertTrue(nvr in [x.nvr for x in promoted_builds[tag]])
                 self.assertEqual(1, len(promoted_builds[tag]))
+        self.assertEqual(4, len(promoted_builds))
+
+    def test_do_promote_with_disjuct_dvers_between_repos(self):
+        self.multi_routes_32_and_33 = [self.routes['3.2-testing'], self.routes['3.3-testing']]
+        pairs = [(self.routes['3.2-testing'], set(['el5', 'el6'])),
+                 (self.routes['3.3-testing'], set(['el6', 'el7']))]
+        prom = promoter.Promoter(self.kojihelper, pairs)
+        prom.add_promotion('disjunct-dvers-in-repo')
+        promoted_builds = prom.do_promotions()
+        self.assertEqual(4, len(self.kojihelper.newly_tagged_packages))
         self.assertEqual(4, len(promoted_builds))
 
     def _test_write_jira(self, real_promotions):
