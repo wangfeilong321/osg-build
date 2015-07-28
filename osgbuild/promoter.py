@@ -2,7 +2,7 @@
 
 
 
-
+import os
 import re
 import sys
 import logging
@@ -13,6 +13,7 @@ if sys.version_info < (2, 6):
     sys.exit(1)
 
 from osgbuild import constants
+from osgbuild import error
 from osgbuild import kojiinter
 from osgbuild import utils
 from osgbuild.utils import printf, print_table
@@ -24,7 +25,7 @@ except ImportError:
     from osgbuild.namedtuple import namedtuple
 
 DEFAULT_ROUTE = 'testing'
-INIFILE = 'data/promoter.ini'
+INIFILE = 'promoter.ini'
 
 DVERS_OFF_BY_DEFAULT = ['el7']
 DVERS_BY_OSGVER = {
@@ -185,11 +186,9 @@ def _parse_list_str(list_str):
 def load_routes(inifile):
     config = ConfigParser.RawConfigParser()
 
-    inifp = open(inifile, 'r')
-    try:
-        config.readfp(inifp, filename=inifile)
-    finally:
-        inifp.close()
+    config.read([os.path.join(x, INIFILE) for x in constants.DATA_FILE_SEARCH_PATH])
+    if not config.sections():
+        raise error.FileNotFoundError(INIFILE, constants.DATA_FILE_SEARCH_PATH)
 
     routes = {}
 
