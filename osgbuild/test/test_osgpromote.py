@@ -231,7 +231,6 @@ class TestPromoter(unittest.TestCase):
         self.testing_route = self.routes['testing']
         self.testing_promoter = self._make_promoter([self.testing_route])
         self.multi_routes = [self.routes['3.1-testing'], self.routes['3.2-testing']]
-        self.multi_routes_32_and_33 = [self.routes['3.2-testing'], self.routes['3.3-testing']]
 
     def _make_promoter(self, routes, dvers=None):
         dvers = dvers or TestPromoter.dvers
@@ -330,7 +329,6 @@ class TestPromoter(unittest.TestCase):
         self.assertEqual(4, len(promoted_builds))
 
     def test_do_promote_with_disjuct_dvers_between_repos(self):
-        self.multi_routes_32_and_33 = [self.routes['3.2-testing'], self.routes['3.3-testing']]
         pairs = [(self.routes['3.2-testing'], set(['el5', 'el6'])),
                  (self.routes['3.3-testing'], set(['el6', 'el7']))]
         prom = promoter.Promoter(self.kojihelper, pairs)
