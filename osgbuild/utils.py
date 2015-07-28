@@ -31,9 +31,9 @@ class CalledProcessError(Exception):
                 (str(self.process), str(self.returncode), str(self.output)))
 
     def __repr__(self):
-        return str(repr(self.process),
-                   repr(self.returncode),
-                   repr(self.output))
+        return str((repr(self.process),
+                    repr(self.returncode),
+                    repr(self.output)))
 
 
 def checked_call(*args, **kwargs):
