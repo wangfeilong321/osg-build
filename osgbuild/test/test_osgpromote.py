@@ -95,27 +95,27 @@ class FakeKojiHelper(promoter.KojiHelper):
                 {'nvr': 'goodpkg-1999-1.osg32.el5', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg32.el5', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-1-1.osg32.el5', 'latest': True},
-                {'nvr': 'disjunct-dvers-in-repo-1.osg32.el5', 'latest': True},
+                {'nvr': 'partially-overlapping-dvers-in-repo-1.osg32.el5', 'latest': True},
                 ],
             'osg-3.2-el6-development': [
                 {'nvr': 'goodpkg-1999-1.osg32.el6', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg32.el6', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-2-1.osg32.el6', 'latest': True},
                 {'nvr': 'reject-distinct-repos-2-1.osg32.el6', 'latest': True},
-                {'nvr': 'disjunct-dvers-in-repo-1.osg32.el6', 'latest': True},
+                {'nvr': 'partially-overlapping-dvers-in-repo-1.osg32.el6', 'latest': True},
                 ],
             'osg-3.3-el6-development': [
                 {'nvr': 'goodpkg-1999-1.osg33.el6', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg33.el6', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-2-1.osg33.el6', 'latest': True},
                 {'nvr': 'reject-distinct-repos-2-1.osg33.el6', 'latest': True},
-                {'nvr': 'disjunct-dvers-in-repo-1.osg33.el6', 'latest': True},
+                {'nvr': 'partially-overlapping-dvers-in-repo-1.osg33.el6', 'latest': True},
                 ],
             'osg-3.3-el7-development': [
                 {'nvr': 'goodpkg-1999-1.osg33.el7', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg33.el7', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-1-1.osg33.el7', 'latest': True},
-                {'nvr': 'disjunct-dvers-in-repo-1.osg33.el7', 'latest': True},
+                {'nvr': 'partially-overlapping-dvers-in-repo-1.osg33.el7', 'latest': True},
                 ],
             }
     tagged_packages_by_tag = {
@@ -127,21 +127,21 @@ class FakeKojiHelper(promoter.KojiHelper):
             'osg-3.2-el5-development': [
                 'goodpkg',
                 'reject-distinct-dvers',
-                'disjunct-dvers-in-repo'],
+                'partially-overlapping-dvers-in-repo'],
             'osg-3.2-el6-development': [
                 'goodpkg',
                 'reject-distinct-dvers',
                 'reject-distinct-repos',
-                'disjunct-dvers-in-repo'],
+                'partially-overlapping-dvers-in-repo'],
             'osg-3.3-el6-development': [
                 'goodpkg',
                 'reject-distinct-dvers',
                 'reject-distinct-repos',
-                'disjunct-dvers-in-repo'],
+                'partially-overlapping-dvers-in-repo'],
             'osg-3.3-el7-development': [
                 'goodpkg',
                 'reject-distinct-dvers',
-                'disjunct-dvers-in-repo'],
+                'partially-overlapping-dvers-in-repo'],
             }
 
     want_success = True
@@ -328,11 +328,11 @@ class TestPromoter(unittest.TestCase):
                 self.assertEqual(1, len(promoted_builds[tag]))
         self.assertEqual(4, len(promoted_builds))
 
-    def test_do_promote_with_disjuct_dvers_between_repos(self):
+    def test_do_promote_with_partially_overlapping_dvers_between_repos(self):
         pairs = [(self.routes['3.2-testing'], set(['el5', 'el6'])),
                  (self.routes['3.3-testing'], set(['el6', 'el7']))]
         prom = promoter.Promoter(self.kojihelper, pairs)
-        prom.add_promotion('disjunct-dvers-in-repo')
+        prom.add_promotion('partially-overlapping-dvers-in-repo')
         promoted_builds = prom.do_promotions()
         self.assertEqual(4, len(self.kojihelper.newly_tagged_packages))
         self.assertEqual(4, len(promoted_builds))
