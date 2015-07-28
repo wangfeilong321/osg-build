@@ -14,6 +14,12 @@ log = logging.getLogger('osgpromote')
 log.setLevel(logging.ERROR)
 
 TAGS = ['el6-gt52',
+        'goc-el5-itb',
+        'goc-el6-itb',
+        'goc-el7-itb',
+        'goc-el5-production',
+        'goc-el6-production',
+        'goc-el7-production',
         'hcc-el5',
         'hcc-el5-release',
         'hcc-el5-testing',
