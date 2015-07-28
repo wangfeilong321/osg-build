@@ -82,46 +82,6 @@ TAGS = ['el6-gt52',
         ]
 
 
-class TestUtil(unittest.TestCase):
-    buildnvr = "osg-build-1.3.2-1.osg32.el5"
-    def test_split_nvr(self):
-        self.assertEqual(('osg-build', '1.3.2', '1.osg32.el5'), promoter.split_nvr(self.buildnvr))
-
-    def test_split_repo_dver(self):
-        self.assertEqual(('osg-build-1.3.2-1', 'osg32', 'el5'), promoter.split_repo_dver(self.buildnvr))
-        self.assertEqual(('foo-1-1', 'osg', ''), promoter.split_repo_dver('foo-1-1.osg'))
-        self.assertEqual(('foo-1-1', '', 'el5'), promoter.split_repo_dver('foo-1-1.el5'))
-        self.assertEqual(('foo-1-1', '', ''), promoter.split_repo_dver('foo-1-1'))
-        # Tests against SOFTWARE-1420:
-        self.assertEqual(('foo-1-1', 'osg', ''), promoter.split_repo_dver('foo-1-1.osg', ['osg']))
-        self.assertEqual(('bar-1-1.1', '', ''), promoter.split_repo_dver('bar-1-1.1'))
-        self.assertEqual(('bar-1-1.rc1', '', ''), promoter.split_repo_dver('bar-1-1.rc1', ['osg', 'osg31', 'osg32']))
-
-
-class TestRouteLoader(unittest.TestCase):
-    def setUp(self):
-        self.routes = promoter.load_routes(INIFILE)
-
-    def test_static_route(self):
-        self.assertEqual('hcc-%s-testing', self.routes['hcc'].from_tag_hint)
-        self.assertEqual('hcc-%s-release', self.routes['hcc'].to_tag_hint)
-        self.assertEqual('hcc', self.routes['hcc'].repo)
-        self.assertEqual(['el5', 'el6', 'el7'], self.routes['hcc'].dvers)
-
-    def test_osg_route(self):
-        self.assertEqual('osg-3.2-%s-development', self.routes['3.2-testing'].from_tag_hint)
-        self.assertEqual('osg-3.2-%s-testing', self.routes['3.2-testing'].to_tag_hint)
-        self.assertEqual('osg32', self.routes['3.2-testing'].repo)
-
-    def test_route_alias(self):
-        for key in 'from_tag_hint', 'to_tag_hint', 'repo':
-            self.assertEqual(getattr(self.routes['testing'], key), getattr(self.routes['3.2-testing'], key))
-
-    def test_type(self):
-        for route in self.routes.values():
-            self.assertTrue(isinstance(route, promoter.Route))
-
-
 class FakeKojiHelper(promoter.KojiHelper):
     tagged_builds_by_tag = {
             'osg-3.1-el5-development': [
@@ -219,6 +179,46 @@ class FakeKojiHelper(promoter.KojiHelper):
             return 'CLOSED'
         else:
             return 'FAILED'
+
+
+class TestUtil(unittest.TestCase):
+    buildnvr = "osg-build-1.3.2-1.osg32.el5"
+    def test_split_nvr(self):
+        self.assertEqual(('osg-build', '1.3.2', '1.osg32.el5'), promoter.split_nvr(self.buildnvr))
+
+    def test_split_repo_dver(self):
+        self.assertEqual(('osg-build-1.3.2-1', 'osg32', 'el5'), promoter.split_repo_dver(self.buildnvr))
+        self.assertEqual(('foo-1-1', 'osg', ''), promoter.split_repo_dver('foo-1-1.osg'))
+        self.assertEqual(('foo-1-1', '', 'el5'), promoter.split_repo_dver('foo-1-1.el5'))
+        self.assertEqual(('foo-1-1', '', ''), promoter.split_repo_dver('foo-1-1'))
+        # Tests against SOFTWARE-1420:
+        self.assertEqual(('foo-1-1', 'osg', ''), promoter.split_repo_dver('foo-1-1.osg', ['osg']))
+        self.assertEqual(('bar-1-1.1', '', ''), promoter.split_repo_dver('bar-1-1.1'))
+        self.assertEqual(('bar-1-1.rc1', '', ''), promoter.split_repo_dver('bar-1-1.rc1', ['osg', 'osg31', 'osg32']))
+
+
+class TestRouteLoader(unittest.TestCase):
+    def setUp(self):
+        self.routes = promoter.load_routes(INIFILE)
+
+    def test_hcc_route(self):
+        self.assertEqual('hcc-%s-testing', self.routes['hcc'].from_tag_hint)
+        self.assertEqual('hcc-%s-release', self.routes['hcc'].to_tag_hint)
+        self.assertEqual('hcc', self.routes['hcc'].repo)
+        self.assertEqual(['el5', 'el6', 'el7'], self.routes['hcc'].dvers)
+
+    def test_osg_route(self):
+        self.assertEqual('osg-3.2-%s-development', self.routes['3.2-testing'].from_tag_hint)
+        self.assertEqual('osg-3.2-%s-testing', self.routes['3.2-testing'].to_tag_hint)
+        self.assertEqual('osg32', self.routes['3.2-testing'].repo)
+
+    def test_route_alias(self):
+        for key in 'from_tag_hint', 'to_tag_hint', 'repo':
+            self.assertEqual(getattr(self.routes['testing'], key), getattr(self.routes['3.2-testing'], key))
+
+    def test_type(self):
+        for route in self.routes.values():
+            self.assertTrue(isinstance(route, promoter.Route))
 
 
 class TestPromoter(unittest.TestCase):
