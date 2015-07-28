@@ -220,12 +220,13 @@ class TestPromoter(unittest.TestCase):
         self.routes = promoter.load_routes(INIFILE)
         self.kojihelper = FakeKojiHelper(False)
         self.testing_route = self.routes['testing']
-        self.testing_promoter = self._make_promoter(self.testing_route)
+        self.testing_promoter = self._make_promoter([self.testing_route])
         self.multi_routes = [self.routes['3.1-testing'], self.routes['3.2-testing']]
 
-    def _make_promoter(self, route, dvers=None):
+    def _make_promoter(self, routes, dvers=None):
         dvers = dvers or TestPromoter.dvers
-        return promoter.Promoter(self.kojihelper, route, dvers)
+        pairs = [(route, set(dvers)) for route in routes]
+        return promoter.Promoter(self.kojihelper, pairs)
 
     def test_add_promotion(self):
         self.testing_promoter.add_promotion('goodpkg')

@@ -221,20 +221,14 @@ class Promoter(object):
     do_promotions should not be called twice.
 
     """
-    def __init__(self, kojihelper, routes, dvers):
+    def __init__(self, kojihelper, route_dvers_pairs):
         """kojihelper is an instance of KojiHelper. routes is a list of Route objects. dvers is a list of strings.
         """
         self.tag_pkg_args = {}
         self.rejects = []
-        if isinstance(routes, Route):
-            self.routes = [routes]
-        elif isinstance(routes, list) or isinstance(routes, tuple):
-            self.routes = list(routes)
-        else:
-            raise TypeError("Unexpected type for routes: %s" % type(routes))
-        self.dvers = dvers
         self.kojihelper = kojihelper
-        self.repos = set(route.repo for route in self.routes)
+        self.route_dvers_pairs = route_dvers_pairs
+        self.repos = set(route.repo for route, _ in self.route_dvers_pairs)
 
     def add_promotion(self, pkg_or_build, ignore_rejects=False):
         """Run get_builds() for 'pkg_or_build', using from_tag_hint as the
@@ -245,11 +239,11 @@ class Promoter(object):
 
         """
         tag_build_pairs = []
-        for route in self.routes:
-            builds = self.get_builds(route, self.dvers, pkg_or_build, ignore_rejects)
-            for dver in builds:
-                to_tag = route.to_tag_hint % dver
-                tag_build_pairs.append((to_tag, builds[dver]))
+        for route, dvers in self.route_dvers_pairs:
+            builds = self.get_builds(route, dvers, pkg_or_build, ignore_rejects)
+            for build_dver in builds:
+                to_tag = route.to_tag_hint % build_dver
+                tag_build_pairs.append((to_tag, builds[build_dver]))
 
         if not ignore_rejects and self.any_distinct_across_dists(tag_build_pairs):
             self.rejects.append(Reject(pkg_or_build, None, Reject.REASON_DISTINCT_ACROSS_DISTS))
@@ -682,7 +676,7 @@ def main(argv=None):
     dvers = set()
     for _, x in route_dvers_pairs:
         dvers.update(x)
-    promoter = Promoter(kojihelper, [x[0] for x in route_dvers_pairs], dvers)
+    promoter = Promoter(kojihelper, route_dvers_pairs)
     for pkgb in pkgs_or_builds:
         promoter.add_promotion(pkgb, options.ignore_rejects)
 
@@ -711,7 +705,7 @@ def main(argv=None):
         promoted_builds = promoter.do_promotions(options.dry_run, options.regen)
         if not options.dry_run:
             printf("\nJIRA code for this set of promotions:\n")
-            write_jira(kojihelper, promoted_builds, real_routes)
+            write_jira(kojihelper, promoted_builds, [x[0] for x in route_dvers_pairs])
     else:
         printf("Not proceeding.")
         return 1
