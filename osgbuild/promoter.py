@@ -108,14 +108,6 @@ class Reject(object):
 #
 
 
-def any(iterable): # Don't warn about redefining this. pylint: disable=W0622
-    """True if any member of 'iterable' is true, False otherwise"""
-    for element in iterable:
-        if element:
-            return True
-    return False
-
-
 def split_nvr(build):
     """Split an NVR into a (Name, Version, Release) tuple"""
     match = re.match(r"(?P<name>.+)-(?P<version>[^-]+)-(?P<release>[^-]+)$", build)
@@ -179,8 +171,30 @@ def _parse_list_str(list_str):
     return filtered_items
 
 
-# TODO EC
 def load_routes(inifile):
+    """Load dict of routes (key is the route name, value is a Route object
+    from a .ini file.
+
+    A section called "route X" creates a route named "X".
+    Required attributes in a route section are:
+    - from_tag_hint: the name of the koji tag to promote from, with '%s'
+      where the dver would be
+    - to_tag_hint: the name of the koji tag to promote to, with '%s' where
+      the dver would be
+    - repotag: the 'repo' part of the dist tag, e.g. 'osg33' for a dist tag
+      like '.osg33.el5'
+    - dvers: a comma or space separated list of distro versions (dvers)
+      supported by default for the tags in the route, e.g. "el5 el6"
+    The optional attribute is:
+    - extra_dvers: a comma or space separated list of dvers that are supported
+      by the tags in the route but should not be on by default
+
+    A section called "aliases" defined alternate names for a route.
+    The key of each attribute in the section is the new name, and the value
+    is the old name, e.g. "testing=3.2-testing".  Aliases to aliases cannot be
+    defined.
+
+    """
     config = ConfigParser.RawConfigParser()
 
     config.read([os.path.join(x, INIFILE) for x in constants.DATA_FILE_SEARCH_PATH])
@@ -193,10 +207,13 @@ def load_routes(inifile):
         if not sec.startswith('route '):
             continue
         routename = sec.split(None, 1)[1]
-        from_tag_hint = config.get(sec, 'from')
-        to_tag_hint = config.get(sec, 'to')
-        repotag = config.get(sec, 'repotag')
-        dvers = _parse_list_str(config.get(sec, 'dvers'))
+        try:
+            from_tag_hint = config.get(sec, 'from')
+            to_tag_hint = config.get(sec, 'to')
+            repotag = config.get(sec, 'repotag')
+            dvers = _parse_list_str(config.get(sec, 'dvers'))
+        except ConfigParser.NoOptionError as err:
+            raise error.Error("Malformed config file: {0!s}".format(err))
         extra_dvers = []
         if config.has_option(sec, 'extra_dvers'):
             extra_dvers = _parse_list_str(config.get(sec, 'extra_dvers'))
@@ -205,7 +222,10 @@ def load_routes(inifile):
 
     if config.has_section('aliases'):
         for newname, oldname in config.items('aliases'):
-            routes[newname] = routes[oldname]
+            try:
+                routes[newname] = routes[oldname]
+            except KeyError as err:
+                raise error.Error("Alias {0} to {1} failed: {1} does not exist".format(newname,oldname))
 
     return routes
 
@@ -578,7 +598,7 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
 
     options.routes = _get_wanted_routes(valid_routes, parser, options)
 
-    return (options, args)
+    return options, args
 
 
 def _get_wanted_routes(valid_routes, parser, options):
