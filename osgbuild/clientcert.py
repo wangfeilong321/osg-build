@@ -27,7 +27,7 @@ class ClientCert(object):
                     "-noout",
                     "-subject", "-nameopt", "multiline",
                     "-dates"]
-        output = utils.checked_backtick(cmd, clocale=True)
+        output = utils.checked_backtick(cmd)
 
         self.startdate, self.enddate = self.extract_dates(output)
         self.first_commonname = self.extract_first_commonname(output)

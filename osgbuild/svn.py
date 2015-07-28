@@ -24,7 +24,7 @@ def is_svn(package_dir):
                 raise Error("%s is not a valid package directory\n(%s)" % (package_dir, ose))
         command = ["svn", "info"]
         try:
-            err = utils.sbacktick(command, clocale=True, err2out=True)[1]
+            err = utils.sbacktick(command, err2out=True)[1]
         except OSError, ose:
             if ose.errno != errno.ENOENT:
                 raise
@@ -105,7 +105,7 @@ def verify_package_info(package_info):
     url = package_info['canon_url']
     rev = package_info['revision']
     command = ["svn", "ls", url, "-r", rev]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise SVNError("Exit code %d getting SVN listing of %s (rev %s). Output:\n%s" % (err, url, rev, out))
     for line in out.split("\n"):
@@ -208,7 +208,7 @@ def get_package_info(package_dir):
     if not re.search(r'@\d+$', package_dir):
         command += ['-r', 'HEAD']
 
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise SVNError("Exit code %d getting SVN info. Output:\n%s" % (err, out))
     info = dict()

@@ -105,8 +105,8 @@ def checked_backtick(*args, **kwargs):
     The output is stripped unless nostrip=True is specified.
     If err2out=True is specified, stderr will be included in the output.
 
-    If clocale=True is specified, LC_ALL=C will be added to the subprocess's
-    environment, forcing the 'C' locale for program output.
+    Unless clocale=False is specified, LC_ALL=C and LANG=C will be added to the
+    subprocess's environment, forcing the 'C' locale for program output.
 
     """
     cmd = args[0]
@@ -119,8 +119,8 @@ def checked_backtick(*args, **kwargs):
     sp_kwargs['stdout'] = subprocess.PIPE
     if sp_kwargs.pop('err2out', False):
         sp_kwargs['stderr'] = subprocess.STDOUT
-    if sp_kwargs.pop('clocale', False):
-        sp_kwargs['env'] = dict(sp_kwargs.pop('env', os.environ), LC_ALL='C')
+    if sp_kwargs.pop('clocale', True):
+        sp_kwargs['env'] = dict(sp_kwargs.pop('env', os.environ), LC_ALL='C', LANG='C')
 
     proc = subprocess.Popen(cmd, *args[1:], **sp_kwargs)
 
