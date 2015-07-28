@@ -117,7 +117,7 @@ class TestRouteDiscovery(unittest.TestCase):
             self.assertTrue(isinstance(route, promoter.Route))
 
 
-class MockKojiHelper(promoter.KojiHelper):
+class FakeKojiHelper(promoter.KojiHelper):
     tagged_builds_by_tag = {
             'osg-3.1-el5-development': [
                 {'nvr': 'goodpkg-2000-1.osg31.el5', 'latest': True},
@@ -175,7 +175,7 @@ class MockKojiHelper(promoter.KojiHelper):
 
     def __init__(self, *args):
         self.newly_tagged_packages = []
-        super(MockKojiHelper, self).__init__(*args)
+        super(FakeKojiHelper, self).__init__(*args)
 
     def get_tagged_packages(self, tag):
         return self.tagged_packages_by_tag[tag]
@@ -215,7 +215,7 @@ class TestPromoter(unittest.TestCase):
     def setUp(self):
         self.route_discovery = promoter.RouteDiscovery(TAGS)
         self.routes = self.route_discovery.get_routes()
-        self.kojihelper = MockKojiHelper(False)
+        self.kojihelper = FakeKojiHelper(False)
         self.testing_route = self.routes['testing']
         self.testing_promoter = self._make_promoter(self.testing_route)
         self.multi_routes = [self.routes['3.1-testing'], self.routes['3.2-testing']]
