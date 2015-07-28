@@ -581,32 +581,33 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
     return (options, args)
 
 
-def _get_wanted_dvers(all_dvers, parser, options):
-    """Helper for parse_cmdline_args. Looks at the --dver-only (e.g. --el5-only)
-    and --no-dver (e.g. --no-el5) arguments the user may have specified and
-    returns a list of the dvers we actually want to promote for.
-    --elX-only arguments override --no-elX arguments.
+def _get_wanted_routes(valid_routes, parser, options):
+    matched_routes = []
 
-    """
-    wanted_dvers = list(all_dvers)
-    # the dvers for which the user specified --dver-only (e.g. --el5-only).
-    # There should be at most 1, but need to check and give appropriate error.
-    only_dvers = []
-    for dver in all_dvers:
-        if getattr(options, "%s_only" % dver):
-            only_dvers.append(dver)
-    if len(only_dvers) > 1:
-        bad_opt_names = ['--%s-only' % dver for dver in only_dvers]
-        parser.error("Can't specify " + " and ".join(bad_opt_names))
-    elif len(only_dvers) == 1:
-        return list(only_dvers)
-
-    # Now go through any --no-dvers (e.g. --no-el5) the user specified.
-    for dver in all_dvers:
-        if getattr(options, "no_%s" % dver):
-            wanted_dvers.remove(dver)
-
-    return wanted_dvers
+    routes = options.routes
+    if routes:
+        expanded_routes = []
+        for route in routes:
+            if route.find(',') != -1:  # We have a comma -- this means multiple routes.
+                expanded_routes.extend(route.split(','))
+            else:
+                expanded_routes.append(route)
+        # User is allowed to specify the shortest unambiguous prefix of a route
+        for route in expanded_routes:
+            if route in valid_routes.keys():
+                # exact match
+                matched_routes.append(route)
+                continue
+            matching_routes = [x for x in valid_routes.keys() if x.startswith(route)]
+            if len(matching_routes) > 1:
+                parser.error("Ambiguous route %r. Matching routes are: %s" % (route, ", ".join(matching_routes)))
+            elif not matching_routes:
+                parser.error("Invalid route %r. Valid routes are: %s" % (route, ", ".join(valid_routes.keys())))
+            else:
+                matched_routes.append(matching_routes[0])
+    else:
+        matched_routes = [DEFAULT_ROUTE]
+    return matched_routes
 
 
 def _print_route_dvers(routename, route):
