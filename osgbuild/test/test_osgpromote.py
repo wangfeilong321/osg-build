@@ -10,6 +10,8 @@ import StringIO
 from osgbuild import promoter
 from osgbuild import constants
 
+INIFILE = 'data/promoter.ini'
+
 log = logging.getLogger('osgpromote')
 log.setLevel(logging.ERROR)
 
@@ -95,21 +97,17 @@ class TestUtil(unittest.TestCase):
         self.assertEqual(('bar-1-1.rc1', '', ''), promoter.split_repo_dver('bar-1-1.rc1', ['osg', 'osg31', 'osg32']))
 
 
-class TestRouteDiscovery(unittest.TestCase):
+class TestRouteLoader(unittest.TestCase):
     def setUp(self):
-        self.route_discovery = promoter.RouteDiscovery(TAGS)
-        self.routes = self.route_discovery.get_routes()
-
-    def test_route_alias(self):
-        for idx in [0, 1]:
-            self.assertEqual(self.routes['testing'][idx], self.routes['3.2-testing'][idx])
+        self.routes = promoter.load_routes(INIFILE)
 
     def test_static_route(self):
         self.assertEqual('hcc-%s-testing', self.routes['hcc'].from_tag_hint)
         self.assertEqual('hcc-%s-release', self.routes['hcc'].to_tag_hint)
         self.assertEqual('hcc', self.routes['hcc'].repo)
+        self.assertEqual(['el5', 'el6', 'el7'], self.routes['hcc'].dvers)
 
-    def test_detected_route(self):
+    def test_osg_route(self):
         self.assertEqual('osg-3.2-%s-development', self.routes['3.2-testing'].from_tag_hint)
         self.assertEqual('osg-3.2-%s-testing', self.routes['3.2-testing'].to_tag_hint)
         self.assertEqual('osg32', self.routes['3.2-testing'].repo)
@@ -219,8 +217,7 @@ class TestPromoter(unittest.TestCase):
     dvers_33 = ['el6', 'el7']
 
     def setUp(self):
-        self.route_discovery = promoter.RouteDiscovery(TAGS)
-        self.routes = self.route_discovery.get_routes()
+        self.routes = promoter.load_routes(INIFILE)
         self.kojihelper = FakeKojiHelper(False)
         self.testing_route = self.routes['testing']
         self.testing_promoter = self._make_promoter(self.testing_route)
@@ -356,9 +353,5 @@ class TestPromoter(unittest.TestCase):
     def test_all(self):
         self._test_write_jira(real_promotions=True)
 
-
-
 if __name__ == '__main__':
     unittest.main()
-
-

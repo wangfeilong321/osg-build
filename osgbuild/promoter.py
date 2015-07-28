@@ -6,6 +6,7 @@
 import re
 import sys
 import logging
+import ConfigParser
 
 from osgbuild import constants
 from osgbuild import kojiinter
@@ -19,8 +20,9 @@ except ImportError:
     from osgbuild.namedtuple import namedtuple
 
 DEFAULT_ROUTE = 'testing'
+INIFILE = 'data/promoter.ini'
+
 DVERS_OFF_BY_DEFAULT = ['el7']
-DEFAULT_OSGVER = '3.2'
 DVERS_BY_OSGVER = {
     '3.1': ['el5', 'el6'],
     '3.2': ['el5', 'el6'],
@@ -46,7 +48,8 @@ class KojiTagsAreMessedUp(Exception):
     """
 
 
-Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo'])
+Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo', 'dvers', 'extra_dvers'])
+#Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo'])
 
 class Build(object):
     def __init__(self, name, version, release_no_dist, repo, dver):
@@ -94,12 +97,6 @@ class Reject(object):
 
     def __str__(self):
         return self.reason % {'pkg_or_build': self.pkg_or_build, 'dist': self.dist}
-
-STATIC_ROUTES = {
-    "hcc": Route("hcc-%s-testing", "hcc-%s-release", "hcc"),
-    "upcoming": Route("osg-upcoming-%s-development", "osg-upcoming-%s-testing", "osgup"),
-    "upcoming-prerelease": Route("osg-upcoming-%s-testing", "osg-upcoming-%s-prerelease", "osgup"),
-   }
 
 #
 # Utility functions
@@ -166,169 +163,44 @@ def split_repo_dver(build, known_repos=None):
     return (build_no_dist, repo, dver)
 
 
-class RouteDiscovery(object):
-    """For discovering and validating promotion routes.
-    In addition to including the predefined routes (from STATIC_ROUTES),
-    also looks for new-style osg routes (with tags of the form
-    osg-M.N-elX-{development,testing,contrib} or
-    osg-upcoming-elX-{development,testing}), and discovers which dvers
-    each route is good for.
+def _parse_list_str(list_str):
+    # split string on spaces or commas
+    items = re.split(r'[ ,]', list_str)
+    # remove empty strings from the list
+    filtered_items = filter(None, items)
+    return filtered_items
 
-    Some terminology:
-      * 'dver' is 'el5', 'el6', 'el7', etc.
-      * 'osgver' is '3.1', '3.2', etc.
-      * a tag_hint is the name of a koji tag with %s where the dver would go,
-        e.g. '%s-upcoming-development'
-      * a 'repo' is the first part of a new-style dist tag, e.g. 'hcc', 'osg31'
-      * a route contains a from_tag_hint, to_tag_hint, and repo
-      * a route is valid for a dver if tags exist for both the from_tag and the
-        to_tag (obtained by filling in the dver for the tag_hints)
-      * a route is valid if it is valid for any dver
-    """
+# TODO EC
+def load_routes(inifile):
+    config = ConfigParser.RawConfigParser()
 
-    def __init__(self, tags):
-        """'tags' is a list of strings, generally produced by running
-        KojiHelper.get_tags(). Can raise KojiTagsAreMessedUp if problems are
-        found with the tags.
-        """
-        self.tags = tags
-        self.routes = self.discover_routes()
-        self.dvers_for_routes = self.discover_dvers_for_routes(self.routes)
+    inifp = open(inifile, 'r')
+    try:
+        config.readfp(inifp, filename=inifile)
+    finally:
+        inifp.close()
 
-    def discover_routes(self):
-        """Create and return a dict of routes keyed by a name (e.g. 'testing').
-        Includes both statically defined routes and OSG routes.
+    routes = {}
 
-        """
-        routes = STATIC_ROUTES.copy()
-        routes.update(self.get_valid_osg_routes())
-        return routes
+    for sec in config.sections():
+        if not sec.startswith('route '):
+            continue
+        routename = sec.split(None, 1)[1]
+        from_tag_hint = config.get(sec, 'from')
+        to_tag_hint = config.get(sec, 'to')
+        repotag = config.get(sec, 'repotag')
+        dvers = _parse_list_str(config.get(sec, 'dvers'))
+        extra_dvers = []
+        if config.has_option(sec, 'extra_dvers'):
+            extra_dvers = _parse_list_str(config.get(sec, 'extra_dvers'))
 
-    def discover_dvers_for_routes(self, routes):
-        """Find and return a dict of dvers for given routes. Values are keyed
-        by the route name (i.e. the key in routes)
+        routes[routename] = Route(from_tag_hint, to_tag_hint, repotag, dvers, extra_dvers)
 
-        """
-        dvers_for_routes = {}
-        to_remove = []
-        for route_name, route in routes.items():
-            dvers = self.get_dvers_for_route(route)
-            if not dvers:
-                to_remove.append(route_name)
-            else:
-                dvers_for_routes[route_name] = dvers
-        for route_name in to_remove:
-            del routes[route_name]
-        return dvers_for_routes
+    if config.has_section('aliases'):
+        for newname, oldname in config.items('aliases'):
+            routes[newname] = routes[oldname]
 
-    def get_routes(self):
-        """Return a dict of routes that were discovered."""
-        return self.routes
-
-    def get_dvers_for_route(self, route):
-        """Return the dvers (as a list of strings) a route supports"""
-        tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[1]))
-        available_tags = [x for x in self.tags if tag_pattern.match(x)]
-        dver_pattern = re.compile(r'(el\d+)')
-        available_dvers = []
-        for tag in available_tags:
-            match = dver_pattern.search(tag)
-            if match:
-                available_dvers.append(match.group(1))
-        return available_dvers
-
-    def get_dvers_for_route_by_name(self, route_name, routes=None):
-        """Return the dvers (as a list of strings) a route supports
-        'route_name' is a key in the 'routes' dictionary.
-
-        """
-        routes = routes or self.routes
-        route = routes[route_name]
-        return self.get_dvers_for_route(route)
-
-    def get_valid_osg_routes(self):
-        """Return a dictionary of the valid OSG routes.
-        This includes the versioned routes (e.g. '3.1-testing') as well
-        as short aliases for them (e.g. 'testing' for the newest versioned
-        route for testing).
-
-        """
-        valid_osg_routes = self.get_valid_versioned_osg_routes()
-        valid_osg_routes.update(self.get_osg_route_aliases(valid_osg_routes))
-
-        return valid_osg_routes
-
-    def get_valid_versioned_osg_routes(self):
-        """Return a dict of versioned OSG routes (e.g. '3.1-testing').
-        All routes are validated (see validate_route_for_dver()).
-
-        """
-        valid_versioned_osg_routes = {}
-        for osgver, dver in self._get_osgvers_dvers():
-            devel_tag_hint = "osg-%s-%%s-development" % (osgver)
-            contrib_tag_hint = "osg-%s-%%s-contrib" % (osgver)
-            testing_tag_hint = "osg-%s-%%s-testing" % (osgver)
-            prerelease_tag_hint = "osg-%s-%%s-prerelease" % (osgver)
-            osgshortver = osgver.replace('.', '')
-
-            potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint, 'osg' + osgshortver),
-                                osgver + "-contrib": (testing_tag_hint, contrib_tag_hint, 'osg' + osgshortver),
-                                osgver + "-prerelease": (testing_tag_hint, prerelease_tag_hint, 'osg' + osgshortver)}
-
-            for route_name, route in potential_routes.items():
-                self.validate_route_for_dver(route, dver)
-                valid_versioned_osg_routes[route_name] = Route(route[0], route[1], route[2])
-
-        return valid_versioned_osg_routes
-
-    def _get_osgvers_dvers(self):
-        """Helper for get_valid_versioned_osg_routes
-        Finds osg-testing tags (i.e. tags like 'osg-3.1-el5-testing') and
-        returns a list of tuples containing:
-        - the OSG major version as a string (e.g. '3.1')
-        - the dver of the tag as a string (e.g. 'el5')
-
-        """
-        osg_testing_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-testing$")
-        osgvers_dvers = []
-        for tag in self.tags:
-            match = osg_testing_pattern.search(tag)
-            if match:
-                osgvers_dvers.append(match.group(1, 2))
-        return osgvers_dvers
-
-    def get_osg_route_aliases(self, valid_versioned_osg_routes):
-        """Get a dict of route aliases for the OSG routes.
-        These aliases are 'testing' and 'contrib'; they are aliases to the
-        default testing and contrib routes (e.g.  'osg-3.2-%s-development').
-
-        Assumes routes have been validated.
-
-        """
-        osg_route_aliases = {}
-
-        for route_base in ['testing', 'contrib', 'prerelease']:
-            default_route = '%s-%s' % (DEFAULT_OSGVER, route_base)
-            osg_route_aliases[route_base] = valid_versioned_osg_routes[default_route]
-
-        return osg_route_aliases
-
-    def validate_route_for_dver(self, route, dver):
-        """Check that both sides of a route exist for the given dver.
-        Returns nothing; raises KojiTagsAreMessedUp if validation fails.
-
-        """
-        errors = []
-        for tag_hint in route[0:2]:
-            tag = tag_hint % dver
-            if tag not in self.tags:
-                errors.append("%s is missing" % tag)
-        if errors:
-            raise KojiTagsAreMessedUp("Error validating route %s: %s" % (route, "; ".join(errors)))
-
-    def validate_route_by_name_for_dver(self, route_name, dver):
-        """See validate_route_for_dver; 'route_name' is a key in the 'routes' dict."""
-        return self.validate_route_for_dver(self.routes[route_name], dver)
+    return routes
 
 
 class Promoter(object):
@@ -653,14 +525,27 @@ def write_jira(kojihelper, promoted_builds, routes, out=None):
 #
 # Command line and main
 #
+def format_valid_routes(valid_routes):
+    formatted = ""
+    for route_name in sorted(valid_routes.keys()):
+        route = valid_routes[route_name]
+        dvers_list = ', '.join(sorted(route.dvers))
+        if route.extra_dvers:
+            dvers_list += ', [' + ','.join(sorted(route.extra_dvers)) + ']'
+        formatted += " - %-20s: %-26s -> %-26s (%s)\n" % (
+            route_name,
+            route.from_tag_hint % '*',
+            route.to_tag_hint % '*',
+            dvers_list
+        )
+    return formatted
+
 
 def parse_cmdline_args(all_dvers, valid_routes, argv):
     """Return a tuple of (options, positional args)"""
     helpstring = "%prog [-r|--route ROUTE]... [options] <packages or builds>"
     helpstring += "\n\nValid routes are:\n"
-    for route in sorted(valid_routes.keys()):
-        helpstring += " - %-20s: %-26s -> %s\n" % (
-            route, valid_routes[route][0] % '*', valid_routes[route][1] % '*')
+    helpstring += format_valid_routes(valid_routes)
 
     parser = OptionParser(helpstring)
 
@@ -679,12 +564,10 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
     for dver in all_dvers:
         parser.add_option("--%s-only" % dver, action="store_true", default=False,
                           help="Promote only %s builds" % dver)
-        if dver not in DVERS_OFF_BY_DEFAULT:
-            parser.add_option("--no-%s" % dver, "--no%s" % dver, action="store_true", default=False,
-                              help="Do not promote %s builds" % dver)
-        else:
-            parser.add_option("--%s" % dver, dest="no_%s" % dver, action="store_false", default=True,
-                              help="Promote %s builds" % dver)
+        parser.add_option("--no-%s" % dver, "--no%s" % dver, dest="no_dvers", action="append_const", const=dver,
+                          help="Do not promote %s builds, even if they are default for the route(s)" % dver)
+        parser.add_option("--%s" % dver, dest="extra_dvers", action="append_const", const=dver,
+                          help="Promote %s builds if the route(s) support them" % dver)
 
     if len(argv) < 2:
         parser.print_help()
@@ -696,32 +579,10 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
     if not options.dvers:
         parser.error("No dvers found to promote")
 
-    matched_routes = []
-    if options.routes:
-        expanded_routes = []
-        for route in options.routes:
-            if route.find(',') != -1: # We have a comma -- this means multiple routes.
-                expanded_routes.extend(route.split(','))
-            else:
-                expanded_routes.append(route)
-        # User is allowed to specify the shortest unambiguous prefix of a route
-        for route in expanded_routes:
-            if route in valid_routes.keys():
-                # exact match
-                matched_routes.append(route)
-                continue
-            matching_routes = [x for x in valid_routes.keys() if x.startswith(route)]
-            if len(matching_routes) > 1:
-                parser.error("Ambiguous route %r. Matching routes are: %s" % (route, ", ".join(matching_routes)))
-            elif not matching_routes:
-                parser.error("Invalid route %r. Valid routes are: %s" % (route, ", ".join(valid_routes.keys())))
-            else:
-                matched_routes.append(matching_routes[0])
-    else:
-        matched_routes = [DEFAULT_ROUTE]
-    options.routes = matched_routes
+    options.routes = _get_wanted_routes(valid_routes, parser, options)
 
     return (options, args)
+
 
 def _get_wanted_dvers(all_dvers, parser, options):
     """Helper for parse_cmdline_args. Looks at the --dver-only (e.g. --el5-only)
@@ -750,22 +611,43 @@ def _get_wanted_dvers(all_dvers, parser, options):
 
     return wanted_dvers
 
+
+def _get_wanted_routes(valid_routes, parser, options):
+    matched_routes = []
+
+    routes = options.routes
+    if routes:
+        expanded_routes = []
+        for route in routes:
+            if route.find(',') != -1:  # We have a comma -- this means multiple routes.
+                expanded_routes.extend(route.split(','))
+            else:
+                expanded_routes.append(route)
+        # User is allowed to specify the shortest unambiguous prefix of a route
+        for route in expanded_routes:
+            if route in valid_routes.keys():
+                # exact match
+                matched_routes.append(route)
+                continue
+            matching_routes = [x for x in valid_routes.keys() if x.startswith(route)]
+            if len(matching_routes) > 1:
+                parser.error("Ambiguous route %r. Matching routes are: %s" % (route, ", ".join(matching_routes)))
+            elif not matching_routes:
+                parser.error("Invalid route %r. Valid routes are: %s" % (route, ", ".join(valid_routes.keys())))
+            else:
+                matched_routes.append(matching_routes[0])
+    else:
+        matched_routes = [DEFAULT_ROUTE]
+    return matched_routes
+
+
 def main(argv=None):
     if argv is None:
         argv = sys.argv
 
     kojihelper = KojiHelper(False)
 
-    tags = kojihelper.get_tags()
-    # HACK
-    try:
-        tags.remove('osg-3.2-el7-development')
-        tags.remove('osg-3.2-el7-testing')
-        tags.remove('osg-3.2-el7-contrib')
-        tags.remove('osg-3.2-el7-prerelease')
-    except ValueError: pass
-    route_discovery = RouteDiscovery(tags)
-    valid_routes = route_discovery.get_routes()
+    valid_routes = load_routes(INIFILE)
 
     options, pkgs_or_builds = parse_cmdline_args(kojihelper.get_all_dvers(), valid_routes, argv)
 
@@ -773,11 +655,13 @@ def main(argv=None):
     routes = options.routes
 
     for route in routes:
-        dvers_for_route = route_discovery.get_dvers_for_route_by_name(route)
+        dvers_for_route = route.dvers + route.extra_dvers
         for dver in dvers:
             if dver not in dvers_for_route:
                 printf("The dver %s is not available for route %s.", dver, route)
-                printf("The available dvers for that route are: %s", ", ".join(dvers_for_route))
+                printf("The default dvers for that route are: %s", ", ".join(route.dvers))
+                if route.extra_dvers:
+                    printf("The route optionally supports these dver(s): %s", ", ".join(route.extra_dvers))
                 sys.exit(1)
 
     if not options.dry_run:
