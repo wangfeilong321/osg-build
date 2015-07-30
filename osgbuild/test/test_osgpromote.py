@@ -1,5 +1,4 @@
 #!/usr/bin/env python2
-
 import sys
 sys.path.insert(0, '.')
 
@@ -10,10 +9,18 @@ import StringIO
 from osgbuild import promoter
 from osgbuild import constants
 
+INIFILE = 'data/promoter.ini'
+
 log = logging.getLogger('osgpromote')
 log.setLevel(logging.ERROR)
 
 TAGS = ['el6-gt52',
+        'goc-el5-itb',
+        'goc-el6-itb',
+        'goc-el7-itb',
+        'goc-el5-production',
+        'goc-el6-production',
+        'goc-el7-production',
         'hcc-el5',
         'hcc-el5-release',
         'hcc-el5-testing',
@@ -73,51 +80,7 @@ TAGS = ['el6-gt52',
         ]
 
 
-class TestUtil(unittest.TestCase):
-    buildnvr = "osg-build-1.3.2-1.osg32.el5"
-    def test_split_nvr(self):
-        self.assertEqual(('osg-build', '1.3.2', '1.osg32.el5'), promoter.split_nvr(self.buildnvr))
-
-    def test_split_repo_dver(self):
-        self.assertEqual(('osg-build-1.3.2-1', 'osg32', 'el5'), promoter.split_repo_dver(self.buildnvr))
-        self.assertEqual(('foo-1-1', 'osg', ''), promoter.split_repo_dver('foo-1-1.osg'))
-        self.assertEqual(('foo-1-1', '', 'el5'), promoter.split_repo_dver('foo-1-1.el5'))
-        self.assertEqual(('foo-1-1', '', ''), promoter.split_repo_dver('foo-1-1'))
-        # Tests against SOFTWARE-1420:
-        self.assertEqual(('foo-1-1', 'osg', ''), promoter.split_repo_dver('foo-1-1.osg', ['osg']))
-        self.assertEqual(('bar-1-1.1', '', ''), promoter.split_repo_dver('bar-1-1.1'))
-        self.assertEqual(('bar-1-1.rc1', '', ''), promoter.split_repo_dver('bar-1-1.rc1', ['osg', 'osg31', 'osg32']))
-
-
-class TestRouteDiscovery(unittest.TestCase):
-    def setUp(self):
-        self.route_discovery = promoter.RouteDiscovery(TAGS)
-        self.routes = self.route_discovery.get_routes()
-
-    def test_route_alias(self):
-        for idx in [0, 1]:
-            self.assertEqual(self.routes['testing'][idx], self.routes['3.2-testing'][idx])
-
-    def test_static_route(self):
-        self.assertEqual('hcc-%s-testing', self.routes['hcc'].from_tag_hint)
-        self.assertEqual('hcc-%s-release', self.routes['hcc'].to_tag_hint)
-        self.assertEqual('hcc', self.routes['hcc'].repo)
-
-    def test_detected_route(self):
-        self.assertEqual('osg-3.2-%s-development', self.routes['3.2-testing'].from_tag_hint)
-        self.assertEqual('osg-3.2-%s-testing', self.routes['3.2-testing'].to_tag_hint)
-        self.assertEqual('osg32', self.routes['3.2-testing'].repo)
-
-    def test_route_alias(self):
-        for key in 'from_tag_hint', 'to_tag_hint', 'repo':
-            self.assertEqual(getattr(self.routes['testing'], key), getattr(self.routes['3.2-testing'], key))
-
-    def test_type(self):
-        for route in self.routes.values():
-            self.assertTrue(isinstance(route, promoter.Route))
-
-
-class MockKojiHelper(promoter.KojiHelper):
+class FakeKojiHelper(promoter.KojiHelper):
     tagged_builds_by_tag = {
             'osg-3.1-el5-development': [
                 {'nvr': 'goodpkg-2000-1.osg31.el5', 'latest': True},
@@ -130,23 +93,27 @@ class MockKojiHelper(promoter.KojiHelper):
                 {'nvr': 'goodpkg-1999-1.osg32.el5', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg32.el5', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-1-1.osg32.el5', 'latest': True},
+                {'nvr': 'partially-overlapping-dvers-in-repo-1.osg32.el5', 'latest': True},
                 ],
             'osg-3.2-el6-development': [
                 {'nvr': 'goodpkg-1999-1.osg32.el6', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg32.el6', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-2-1.osg32.el6', 'latest': True},
                 {'nvr': 'reject-distinct-repos-2-1.osg32.el6', 'latest': True},
+                {'nvr': 'partially-overlapping-dvers-in-repo-1.osg32.el6', 'latest': True},
                 ],
             'osg-3.3-el6-development': [
                 {'nvr': 'goodpkg-1999-1.osg33.el6', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg33.el6', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-2-1.osg33.el6', 'latest': True},
                 {'nvr': 'reject-distinct-repos-2-1.osg33.el6', 'latest': True},
+                {'nvr': 'partially-overlapping-dvers-in-repo-1.osg33.el6', 'latest': True},
                 ],
             'osg-3.3-el7-development': [
                 {'nvr': 'goodpkg-1999-1.osg33.el7', 'latest': False},
                 {'nvr': 'goodpkg-2000-1.osg33.el7', 'latest': True},
                 {'nvr': 'reject-distinct-dvers-1-1.osg33.el7', 'latest': True},
+                {'nvr': 'partially-overlapping-dvers-in-repo-1.osg33.el7', 'latest': True},
                 ],
             }
     tagged_packages_by_tag = {
@@ -157,25 +124,29 @@ class MockKojiHelper(promoter.KojiHelper):
                 'reject-distinct-repos'],
             'osg-3.2-el5-development': [
                 'goodpkg',
-                'reject-distinct-dvers'],
+                'reject-distinct-dvers',
+                'partially-overlapping-dvers-in-repo'],
             'osg-3.2-el6-development': [
                 'goodpkg',
                 'reject-distinct-dvers',
-                'reject-distinct-repos'],
+                'reject-distinct-repos',
+                'partially-overlapping-dvers-in-repo'],
             'osg-3.3-el6-development': [
                 'goodpkg',
                 'reject-distinct-dvers',
-                'reject-distinct-repos'],
+                'reject-distinct-repos',
+                'partially-overlapping-dvers-in-repo'],
             'osg-3.3-el7-development': [
                 'goodpkg',
-                'reject-distinct-dvers'],
+                'reject-distinct-dvers',
+                'partially-overlapping-dvers-in-repo'],
             }
 
     want_success = True
 
     def __init__(self, *args):
         self.newly_tagged_packages = []
-        super(MockKojiHelper, self).__init__(*args)
+        super(FakeKojiHelper, self).__init__(*args)
 
     def get_tagged_packages(self, tag):
         return self.tagged_packages_by_tag[tag]
@@ -208,21 +179,61 @@ class MockKojiHelper(promoter.KojiHelper):
             return 'FAILED'
 
 
+class TestUtil(unittest.TestCase):
+    buildnvr = "osg-build-1.3.2-1.osg32.el5"
+    def test_split_nvr(self):
+        self.assertEqual(('osg-build', '1.3.2', '1.osg32.el5'), promoter.split_nvr(self.buildnvr))
+
+    def test_split_repo_dver(self):
+        self.assertEqual(('osg-build-1.3.2-1', 'osg32', 'el5'), promoter.split_repo_dver(self.buildnvr))
+        self.assertEqual(('foo-1-1', 'osg', ''), promoter.split_repo_dver('foo-1-1.osg'))
+        self.assertEqual(('foo-1-1', '', 'el5'), promoter.split_repo_dver('foo-1-1.el5'))
+        self.assertEqual(('foo-1-1', '', ''), promoter.split_repo_dver('foo-1-1'))
+        # Tests against SOFTWARE-1420:
+        self.assertEqual(('foo-1-1', 'osg', ''), promoter.split_repo_dver('foo-1-1.osg', ['osg']))
+        self.assertEqual(('bar-1-1.1', '', ''), promoter.split_repo_dver('bar-1-1.1'))
+        self.assertEqual(('bar-1-1.rc1', '', ''), promoter.split_repo_dver('bar-1-1.rc1', ['osg', 'osg31', 'osg32']))
+
+
+class TestRouteLoader(unittest.TestCase):
+    def setUp(self):
+        self.routes = promoter.load_routes(INIFILE)
+
+    def test_hcc_route(self):
+        self.assertEqual('hcc-%s-testing', self.routes['hcc'].from_tag_hint)
+        self.assertEqual('hcc-%s-release', self.routes['hcc'].to_tag_hint)
+        self.assertEqual('hcc', self.routes['hcc'].repo)
+        self.assertEqual(['el5', 'el6', 'el7'], self.routes['hcc'].dvers)
+
+    def test_osg_route(self):
+        self.assertEqual('osg-3.2-%s-development', self.routes['3.2-testing'].from_tag_hint)
+        self.assertEqual('osg-3.2-%s-testing', self.routes['3.2-testing'].to_tag_hint)
+        self.assertEqual('osg32', self.routes['3.2-testing'].repo)
+
+    def test_route_alias(self):
+        for key in 'from_tag_hint', 'to_tag_hint', 'repo':
+            self.assertEqual(getattr(self.routes['testing'], key), getattr(self.routes['3.2-testing'], key))
+
+    def test_type(self):
+        for route in self.routes.values():
+            self.assertTrue(isinstance(route, promoter.Route))
+
+
 class TestPromoter(unittest.TestCase):
     dvers = ['el5', 'el6']
     dvers_33 = ['el6', 'el7']
 
     def setUp(self):
-        self.route_discovery = promoter.RouteDiscovery(TAGS)
-        self.routes = self.route_discovery.get_routes()
-        self.kojihelper = MockKojiHelper(False)
+        self.routes = promoter.load_routes(INIFILE)
+        self.kojihelper = FakeKojiHelper(False)
         self.testing_route = self.routes['testing']
-        self.testing_promoter = self._make_promoter(self.testing_route)
+        self.testing_promoter = self._make_promoter([self.testing_route])
         self.multi_routes = [self.routes['3.1-testing'], self.routes['3.2-testing']]
 
-    def _make_promoter(self, route, dvers=None):
+    def _make_promoter(self, routes, dvers=None):
         dvers = dvers or TestPromoter.dvers
-        return promoter.Promoter(self.kojihelper, route, dvers)
+        pairs = [(route, set(dvers)) for route in routes]
+        return promoter.Promoter(self.kojihelper, pairs)
 
     def test_add_promotion(self):
         self.testing_promoter.add_promotion('goodpkg')
@@ -315,6 +326,15 @@ class TestPromoter(unittest.TestCase):
                 self.assertEqual(1, len(promoted_builds[tag]))
         self.assertEqual(4, len(promoted_builds))
 
+    def test_do_promote_with_partially_overlapping_dvers_between_repos(self):
+        pairs = [(self.routes['3.2-testing'], set(['el5', 'el6'])),
+                 (self.routes['3.3-testing'], set(['el6', 'el7']))]
+        prom = promoter.Promoter(self.kojihelper, pairs)
+        prom.add_promotion('partially-overlapping-dvers-in-repo')
+        promoted_builds = prom.do_promotions()
+        self.assertEqual(4, len(self.kojihelper.newly_tagged_packages))
+        self.assertEqual(4, len(promoted_builds))
+
     def _test_write_jira(self, real_promotions):
         out = StringIO.StringIO()
         promoted_builds = {}
@@ -350,9 +370,5 @@ class TestPromoter(unittest.TestCase):
     def test_all(self):
         self._test_write_jira(real_promotions=True)
 
-
-
 if __name__ == '__main__':
     unittest.main()
-
-

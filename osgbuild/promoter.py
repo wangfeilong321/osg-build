@@ -2,12 +2,14 @@
 
 
 
-
+import os
 import re
 import sys
 import logging
+import ConfigParser
 
 from osgbuild import constants
+from osgbuild import error
 from osgbuild import kojiinter
 from osgbuild import utils
 from osgbuild.utils import printf, print_table
@@ -19,8 +21,9 @@ except ImportError:
     from osgbuild.namedtuple import namedtuple
 
 DEFAULT_ROUTE = 'testing'
+INIFILE = 'promoter.ini'
+
 DVERS_OFF_BY_DEFAULT = ['el7']
-DEFAULT_OSGVER = '3.2'
 DVERS_BY_OSGVER = {
     '3.1': ['el5', 'el6'],
     '3.2': ['el5', 'el6'],
@@ -38,6 +41,7 @@ log_consolehandler.setFormatter(log_formatter)
 log.addHandler(log_consolehandler)
 log.propagate = False
 
+
 class KojiTagsAreMessedUp(Exception):
     """Raised when Koji tags are in an inconsistent or unusable state.
 
@@ -46,7 +50,9 @@ class KojiTagsAreMessedUp(Exception):
     """
 
 
-Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo'])
+Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo', 'dvers', 'extra_dvers'])
+# Route = namedtuple('Route', ['from_tag_hint', 'to_tag_hint', 'repo'])
+
 
 class Build(object):
     def __init__(self, name, version, release_no_dist, repo, dver):
@@ -87,6 +93,7 @@ class Build(object):
 class Reject(object):
     REASON_DISTINCT_ACROSS_DISTS = "Build versions matching %(pkg_or_build)s distinct across dist tags"
     REASON_NOMATCHING_FOR_DIST = "No build matching %(pkg_or_build)s for dist %(dist)s"
+
     def __init__(self, pkg_or_build, dist, reason):
         self.pkg_or_build = pkg_or_build
         self.dist = dist
@@ -94,12 +101,6 @@ class Reject(object):
 
     def __str__(self):
         return self.reason % {'pkg_or_build': self.pkg_or_build, 'dist': self.dist}
-
-STATIC_ROUTES = {
-    "hcc": Route("hcc-%s-testing", "hcc-%s-release", "hcc"),
-    "upcoming": Route("osg-upcoming-%s-development", "osg-upcoming-%s-testing", "osgup"),
-    "upcoming-prerelease": Route("osg-upcoming-%s-testing", "osg-upcoming-%s-prerelease", "osgup"),
-   }
 
 #
 # Utility functions
@@ -116,9 +117,10 @@ def split_nvr(build):
     """Split an NVR into a (Name, Version, Release) tuple"""
     match = re.match(r"(?P<name>.+)-(?P<version>[^-]+)-(?P<release>[^-]+)$", build)
     if match:
-        return (match.group('name'), match.group('version'), match.group('release'))
+        return match.group('name'), match.group('version'), match.group('release')
     else:
-        return ('', '', '')
+        return '', '', ''
+
 
 def split_repo_dver(build, known_repos=None):
     """Split out the dist tag from the NVR of a build, returning a tuple
@@ -163,172 +165,74 @@ def split_repo_dver(build, known_repos=None):
         groupdict = match.groupdict()
         build_no_dist, repo, dver = groupdict['build_no_dist'], groupdict.get('repo', ''), groupdict.get('dver', '')
 
-    return (build_no_dist, repo, dver)
+    return build_no_dist, repo, dver
 
 
-class RouteDiscovery(object):
-    """For discovering and validating promotion routes.
-    In addition to including the predefined routes (from STATIC_ROUTES),
-    also looks for new-style osg routes (with tags of the form
-    osg-M.N-elX-{development,testing,contrib} or
-    osg-upcoming-elX-{development,testing}), and discovers which dvers
-    each route is good for.
+def _parse_list_str(list_str):
+    # split string on spaces or commas
+    items = re.split(r'[ ,]', list_str)
+    # remove empty strings from the list
+    filtered_items = filter(None, items)
+    return filtered_items
 
-    Some terminology:
-      * 'dver' is 'el5', 'el6', 'el7', etc.
-      * 'osgver' is '3.1', '3.2', etc.
-      * a tag_hint is the name of a koji tag with %s where the dver would go,
-        e.g. '%s-upcoming-development'
-      * a 'repo' is the first part of a new-style dist tag, e.g. 'hcc', 'osg31'
-      * a route contains a from_tag_hint, to_tag_hint, and repo
-      * a route is valid for a dver if tags exist for both the from_tag and the
-        to_tag (obtained by filling in the dver for the tag_hints)
-      * a route is valid if it is valid for any dver
+
+def load_routes(inifile):
+    """Load dict of routes (key is the route name, value is a Route object
+    from a .ini file.
+
+    A section called "route X" creates a route named "X".
+    Required attributes in a route section are:
+    - from_tag_hint: the name of the koji tag to promote from, with '%s'
+      where the dver would be
+    - to_tag_hint: the name of the koji tag to promote to, with '%s' where
+      the dver would be
+    - repotag: the 'repo' part of the dist tag, e.g. 'osg33' for a dist tag
+      like '.osg33.el5'
+    - dvers: a comma or space separated list of distro versions (dvers)
+      supported by default for the tags in the route, e.g. "el5 el6"
+    The optional attribute is:
+    - extra_dvers: a comma or space separated list of dvers that are supported
+      by the tags in the route but should not be on by default
+
+    A section called "aliases" defined alternate names for a route.
+    The key of each attribute in the section is the new name, and the value
+    is the old name, e.g. "testing=3.2-testing".  Aliases to aliases cannot be
+    defined.
+
     """
+    config = ConfigParser.RawConfigParser()
 
-    def __init__(self, tags):
-        """'tags' is a list of strings, generally produced by running
-        KojiHelper.get_tags(). Can raise KojiTagsAreMessedUp if problems are
-        found with the tags.
-        """
-        self.tags = tags
-        self.routes = self.discover_routes()
-        self.dvers_for_routes = self.discover_dvers_for_routes(self.routes)
+    config.read([os.path.join(x, INIFILE) for x in constants.DATA_FILE_SEARCH_PATH])
+    if not config.sections():
+        raise error.FileNotFoundError(INIFILE, constants.DATA_FILE_SEARCH_PATH)
 
-    def discover_routes(self):
-        """Create and return a dict of routes keyed by a name (e.g. 'testing').
-        Includes both statically defined routes and OSG routes.
+    routes = {}
 
-        """
-        routes = STATIC_ROUTES.copy()
-        routes.update(self.get_valid_osg_routes())
-        return routes
+    for sec in config.sections():
+        if not sec.startswith('route '):
+            continue
+        routename = sec.split(None, 1)[1]
+        try:
+            from_tag_hint = config.get(sec, 'from')
+            to_tag_hint = config.get(sec, 'to')
+            repotag = config.get(sec, 'repotag')
+            dvers = _parse_list_str(config.get(sec, 'dvers'))
+        except ConfigParser.NoOptionError, err:
+            raise error.Error("Malformed config file: %s" % str(err))
+        extra_dvers = []
+        if config.has_option(sec, 'extra_dvers'):
+            extra_dvers = _parse_list_str(config.get(sec, 'extra_dvers'))
 
-    def discover_dvers_for_routes(self, routes):
-        """Find and return a dict of dvers for given routes. Values are keyed
-        by the route name (i.e. the key in routes)
+        routes[routename] = Route(from_tag_hint, to_tag_hint, repotag, dvers, extra_dvers)
 
-        """
-        dvers_for_routes = {}
-        to_remove = []
-        for route_name, route in routes.items():
-            dvers = self.get_dvers_for_route(route)
-            if not dvers:
-                to_remove.append(route_name)
-            else:
-                dvers_for_routes[route_name] = dvers
-        for route_name in to_remove:
-            del routes[route_name]
-        return dvers_for_routes
+    if config.has_section('aliases'):
+        for newname, oldname in config.items('aliases'):
+            try:
+                routes[newname] = routes[oldname]
+            except KeyError:
+                raise error.Error("Alias %s to %s failed: %s does not exist" % (newname, newname, oldname))
 
-    def get_routes(self):
-        """Return a dict of routes that were discovered."""
-        return self.routes
-
-    def get_dvers_for_route(self, route):
-        """Return the dvers (as a list of strings) a route supports"""
-        tag_pattern = re.compile(re.sub(r'%s', r'(el\d+)', route[1]))
-        available_tags = [x for x in self.tags if tag_pattern.match(x)]
-        dver_pattern = re.compile(r'(el\d+)')
-        available_dvers = []
-        for tag in available_tags:
-            match = dver_pattern.search(tag)
-            if match:
-                available_dvers.append(match.group(1))
-        return available_dvers
-
-    def get_dvers_for_route_by_name(self, route_name, routes=None):
-        """Return the dvers (as a list of strings) a route supports
-        'route_name' is a key in the 'routes' dictionary.
-
-        """
-        routes = routes or self.routes
-        route = routes[route_name]
-        return self.get_dvers_for_route(route)
-
-    def get_valid_osg_routes(self):
-        """Return a dictionary of the valid OSG routes.
-        This includes the versioned routes (e.g. '3.1-testing') as well
-        as short aliases for them (e.g. 'testing' for the newest versioned
-        route for testing).
-
-        """
-        valid_osg_routes = self.get_valid_versioned_osg_routes()
-        valid_osg_routes.update(self.get_osg_route_aliases(valid_osg_routes))
-
-        return valid_osg_routes
-
-    def get_valid_versioned_osg_routes(self):
-        """Return a dict of versioned OSG routes (e.g. '3.1-testing').
-        All routes are validated (see validate_route_for_dver()).
-
-        """
-        valid_versioned_osg_routes = {}
-        for osgver, dver in self._get_osgvers_dvers():
-            devel_tag_hint = "osg-%s-%%s-development" % (osgver)
-            contrib_tag_hint = "osg-%s-%%s-contrib" % (osgver)
-            testing_tag_hint = "osg-%s-%%s-testing" % (osgver)
-            prerelease_tag_hint = "osg-%s-%%s-prerelease" % (osgver)
-            osgshortver = osgver.replace('.', '')
-
-            potential_routes = {osgver + "-testing": (devel_tag_hint, testing_tag_hint, 'osg' + osgshortver),
-                                osgver + "-contrib": (testing_tag_hint, contrib_tag_hint, 'osg' + osgshortver),
-                                osgver + "-prerelease": (testing_tag_hint, prerelease_tag_hint, 'osg' + osgshortver)}
-
-            for route_name, route in potential_routes.items():
-                self.validate_route_for_dver(route, dver)
-                valid_versioned_osg_routes[route_name] = Route(route[0], route[1], route[2])
-
-        return valid_versioned_osg_routes
-
-    def _get_osgvers_dvers(self):
-        """Helper for get_valid_versioned_osg_routes
-        Finds osg-testing tags (i.e. tags like 'osg-3.1-el5-testing') and
-        returns a list of tuples containing:
-        - the OSG major version as a string (e.g. '3.1')
-        - the dver of the tag as a string (e.g. 'el5')
-
-        """
-        osg_testing_pattern = re.compile(r"^osg-(\d+\.\d+)-(el\d+)-testing$")
-        osgvers_dvers = []
-        for tag in self.tags:
-            match = osg_testing_pattern.search(tag)
-            if match:
-                osgvers_dvers.append(match.group(1, 2))
-        return osgvers_dvers
-
-    def get_osg_route_aliases(self, valid_versioned_osg_routes):
-        """Get a dict of route aliases for the OSG routes.
-        These aliases are 'testing' and 'contrib'; they are aliases to the
-        default testing and contrib routes (e.g.  'osg-3.2-%s-development').
-
-        Assumes routes have been validated.
-
-        """
-        osg_route_aliases = {}
-
-        for route_base in ['testing', 'contrib', 'prerelease']:
-            default_route = '%s-%s' % (DEFAULT_OSGVER, route_base)
-            osg_route_aliases[route_base] = valid_versioned_osg_routes[default_route]
-
-        return osg_route_aliases
-
-    def validate_route_for_dver(self, route, dver):
-        """Check that both sides of a route exist for the given dver.
-        Returns nothing; raises KojiTagsAreMessedUp if validation fails.
-
-        """
-        errors = []
-        for tag_hint in route[0:2]:
-            tag = tag_hint % dver
-            if tag not in self.tags:
-                errors.append("%s is missing" % tag)
-        if errors:
-            raise KojiTagsAreMessedUp("Error validating route %s: %s" % (route, "; ".join(errors)))
-
-    def validate_route_by_name_for_dver(self, route_name, dver):
-        """See validate_route_for_dver; 'route_name' is a key in the 'routes' dict."""
-        return self.validate_route_for_dver(self.routes[route_name], dver)
+    return routes
 
 
 class Promoter(object):
@@ -338,21 +242,14 @@ class Promoter(object):
     do_promotions should not be called twice.
 
     """
-    def __init__(self, kojihelper, routes, dvers):
+    def __init__(self, kojihelper, route_dvers_pairs):
         """kojihelper is an instance of KojiHelper. routes is a list of Route objects. dvers is a list of strings.
         """
         self.tag_pkg_args = {}
         self.rejects = []
-        if isinstance(routes, Route):
-            self.routes = [routes]
-        elif isinstance(routes, list) or isinstance(routes, tuple):
-            self.routes = list(routes)
-        else:
-            raise TypeError("Unexpected type for routes: %s" % type(routes))
-        self.dvers = dvers
         self.kojihelper = kojihelper
-        self.repos = set(route.repo for route in self.routes)
-
+        self.route_dvers_pairs = route_dvers_pairs
+        self.repos = set(route.repo for route, _ in self.route_dvers_pairs)
 
     def add_promotion(self, pkg_or_build, ignore_rejects=False):
         """Run get_builds() for 'pkg_or_build', using from_tag_hint as the
@@ -363,11 +260,11 @@ class Promoter(object):
 
         """
         tag_build_pairs = []
-        for route in self.routes:
-            builds = self.get_builds(route, self.dvers, pkg_or_build, ignore_rejects)
-            for dver in builds:
-                to_tag = route.to_tag_hint % dver
-                tag_build_pairs.append((to_tag, builds[dver]))
+        for route, dvers in self.route_dvers_pairs:
+            builds = self.get_builds(route, dvers, pkg_or_build, ignore_rejects)
+            for build_dver in builds:
+                to_tag = route.to_tag_hint % build_dver
+                tag_build_pairs.append((to_tag, builds[build_dver]))
 
         if not ignore_rejects and self.any_distinct_across_dists(tag_build_pairs):
             self.rejects.append(Reject(pkg_or_build, None, Reject.REASON_DISTINCT_ACROSS_DISTS))
@@ -565,7 +462,7 @@ class KojiHelper(kojiinter.KojiLibInter):
     def get_build_uri(self, build_nvr):
         """Return a URI to the kojiweb page of the build with the given NVR"""
         buildinfo = self.koji_get_build(build_nvr)
-        return ("%s/koji/buildinfo?buildID=%d" % (constants.HTTPS_KOJI_HUB, int(buildinfo['id'])))
+        return "%s/koji/buildinfo?buildID=%d" % (constants.HTTPS_KOJI_HUB, int(buildinfo['id']))
 
     def koji_get_build(self, build_nvr):
         return self.kojisession.getBuild(build_nvr)
@@ -627,7 +524,6 @@ class KojiHelper(kojiinter.KojiLibInter):
             self.watch_tasks([self.regen_repo(tag)])
 
 
-
 #
 # JIRA writing
 #
@@ -650,17 +546,44 @@ def write_jira(kojihelper, promoted_builds, routes, out=None):
     out.write("Promoted %s to %s\n" % (", ".join(sorted(nvrs_no_dist)), ", ".join([x.to_tag_hint % "el*" for x in routes])))
     out.write(table)
 
+
 #
 # Command line and main
 #
+
+def format_valid_routes(valid_routes):
+    formatted = ""
+    for route_name in sorted(valid_routes.keys()):
+        route = valid_routes[route_name]
+        dvers_list = ', '.join(sorted(route.dvers))
+        if route.extra_dvers:
+            dvers_list += ', [' + ','.join(sorted(route.extra_dvers)) + ']'
+        formatted += " - %-20s: %-26s -> %-26s (%s)\n" % (
+            route_name,
+            route.from_tag_hint % '*',
+            route.to_tag_hint % '*',
+            dvers_list
+        )
+    return formatted
+
+
+def _append_const(option, opt, value, parser, const):
+    """optparser callback to do the same as the 'append_const' action
+    on Python 2.4, which does not support append_const.
+
+    Use as follows in add_option:
+    action="callback", callback=_append_const, callback_args=(const,)
+    """
+    if not getattr(parser.values, option.dest, option.default):
+        setattr(parser.values, option.dest, [])
+    getattr(parser.values, option.dest).append(const)
+
 
 def parse_cmdline_args(all_dvers, valid_routes, argv):
     """Return a tuple of (options, positional args)"""
     helpstring = "%prog [-r|--route ROUTE]... [options] <packages or builds>"
     helpstring += "\n\nValid routes are:\n"
-    for route in sorted(valid_routes.keys()):
-        helpstring += " - %-20s: %-26s -> %s\n" % (
-            route, valid_routes[route][0] % '*', valid_routes[route][1] % '*')
+    helpstring += format_valid_routes(valid_routes)
 
     parser = OptionParser(helpstring)
 
@@ -677,14 +600,14 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
     parser.add_option("-y", "--assume-yes", action="store_true", default=False,
                       help="Do not prompt before promotion")
     for dver in all_dvers:
-        parser.add_option("--%s-only" % dver, action="store_true", default=False,
+        parser.add_option("--%s-only" % dver, action="store_const", dest="only_dver", const=dver, default=None,
                           help="Promote only %s builds" % dver)
-        if dver not in DVERS_OFF_BY_DEFAULT:
-            parser.add_option("--no-%s" % dver, "--no%s" % dver, action="store_true", default=False,
-                              help="Do not promote %s builds" % dver)
-        else:
-            parser.add_option("--%s" % dver, dest="no_%s" % dver, action="store_false", default=True,
-                              help="Promote %s builds" % dver)
+        parser.add_option("--no-%s" % dver, "--no%s" % dver, dest="no_dvers", action="callback", callback=_append_const,
+                          callback_args=(dver,), default=[],
+                          help="Do not promote %s builds, even if they are default for the route(s)" % dver)
+        parser.add_option("--%s" % dver, dest="extra_dvers", action="callback", callback=_append_const,
+                          callback_args=(dver,), default=[],
+                          help="Promote %s builds if the route(s) support them" % dver)
 
     if len(argv) < 2:
         parser.print_help()
@@ -692,15 +615,19 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
 
     options, args = parser.parse_args(argv[1:])
 
-    options.dvers = _get_wanted_dvers(all_dvers, parser, options)
-    if not options.dvers:
-        parser.error("No dvers found to promote")
+    options.routes = _get_wanted_routes(valid_routes, parser, options)
 
+    return options, args
+
+
+def _get_wanted_routes(valid_routes, parser, options):
     matched_routes = []
-    if options.routes:
+
+    routes = options.routes
+    if routes:
         expanded_routes = []
-        for route in options.routes:
-            if route.find(',') != -1: # We have a comma -- this means multiple routes.
+        for route in routes:
+            if route.find(',') != -1:  # We have a comma -- this means multiple routes.
                 expanded_routes.extend(route.split(','))
             else:
                 expanded_routes.append(route)
@@ -719,36 +646,14 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
                 matched_routes.append(matching_routes[0])
     else:
         matched_routes = [DEFAULT_ROUTE]
-    options.routes = matched_routes
+    return matched_routes
 
-    return (options, args)
 
-def _get_wanted_dvers(all_dvers, parser, options):
-    """Helper for parse_cmdline_args. Looks at the --dver-only (e.g. --el5-only)
-    and --no-dver (e.g. --no-el5) arguments the user may have specified and
-    returns a list of the dvers we actually want to promote for.
-    --elX-only arguments override --no-elX arguments.
+def _print_route_dvers(routename, route):
+    printf("The default dver(s) for %s are: %s", routename, ", ".join(route.dvers))
+    if route.extra_dvers:
+        printf("The route optionally supports these dver(s): %s", ", ".join(route.extra_dvers))
 
-    """
-    wanted_dvers = list(all_dvers)
-    # the dvers for which the user specified --dver-only (e.g. --el5-only).
-    # There should be at most 1, but need to check and give appropriate error.
-    only_dvers = []
-    for dver in all_dvers:
-        if getattr(options, "%s_only" % dver):
-            only_dvers.append(dver)
-    if len(only_dvers) > 1:
-        bad_opt_names = ['--%s-only' % dver for dver in only_dvers]
-        parser.error("Can't specify " + " and ".join(bad_opt_names))
-    elif len(only_dvers) == 1:
-        return list(only_dvers)
-
-    # Now go through any --no-dvers (e.g. --no-el5) the user specified.
-    for dver in all_dvers:
-        if getattr(options, "no_%s" % dver):
-            wanted_dvers.remove(dver)
-
-    return wanted_dvers
 
 def main(argv=None):
     if argv is None:
@@ -756,42 +661,29 @@ def main(argv=None):
 
     kojihelper = KojiHelper(False)
 
-    tags = kojihelper.get_tags()
-    # HACK
-    try:
-        tags.remove('osg-3.2-el7-development')
-        tags.remove('osg-3.2-el7-testing')
-        tags.remove('osg-3.2-el7-contrib')
-        tags.remove('osg-3.2-el7-prerelease')
-    except ValueError: pass
-    route_discovery = RouteDiscovery(tags)
-    valid_routes = route_discovery.get_routes()
+    valid_routes = load_routes(INIFILE)
 
     options, pkgs_or_builds = parse_cmdline_args(kojihelper.get_all_dvers(), valid_routes, argv)
 
-    dvers = options.dvers
-    routes = options.routes
+    routenames = options.routes
 
-    for route in routes:
-        dvers_for_route = route_discovery.get_dvers_for_route_by_name(route)
-        for dver in dvers:
-            if dver not in dvers_for_route:
-                printf("The dver %s is not available for route %s.", dver, route)
-                printf("The available dvers for that route are: %s", ", ".join(dvers_for_route))
-                sys.exit(1)
+    route_dvers_pairs = _get_route_dvers_pairs(routenames, valid_routes, options.extra_dvers, options.no_dvers,
+                                               options.only_dver)
 
     if not options.dry_run:
         kojihelper.login_to_koji()
 
-    for route in routes:
+    for route, dvers in route_dvers_pairs:
         printf("Promoting from %s to %s for dvers: %s",
-               valid_routes[route][0] % 'el*',
-               valid_routes[route][1] % 'el*',
-               ", ".join(dvers))
+               route.from_tag_hint % 'el*',
+               route.to_tag_hint % 'el*',
+               ", ".join(sorted(dvers)))
     printf("Examining the following packages/builds:\n%s", "\n".join(["'" + x + "'" for x in pkgs_or_builds]))
 
-    real_routes = [valid_routes[route] for route in routes]
-    promoter = Promoter(kojihelper, real_routes, dvers)
+    dvers = set()
+    for _, x in route_dvers_pairs:
+        dvers.update(x)
+    promoter = Promoter(kojihelper, route_dvers_pairs)
     for pkgb in pkgs_or_builds:
         promoter.add_promotion(pkgb, options.ignore_rejects)
 
@@ -820,13 +712,44 @@ def main(argv=None):
         promoted_builds = promoter.do_promotions(options.dry_run, options.regen)
         if not options.dry_run:
             printf("\nJIRA code for this set of promotions:\n")
-            write_jira(kojihelper, promoted_builds, real_routes)
+            write_jira(kojihelper, promoted_builds, [x[0] for x in route_dvers_pairs])
     else:
         printf("Not proceeding.")
         return 1
 
     return 0
 
+
+def _get_route_dvers_pairs(routenames, valid_routes, extra_dvers, no_dvers, only_dver):
+    route_dvers_pairs = []
+
+    for routename in routenames:
+        route = valid_routes[routename]
+
+        if only_dver:
+            if only_dver in route.dvers or only_dver in route.extra_dvers:
+                route_dvers_pairs.append((route, set([only_dver])))
+            else:
+                printf("The dver %s is not available for route %s.", only_dver, routename)
+                _print_route_dvers(routename, route)
+                sys.exit(2)
+            continue
+
+        wanted_dvers_for_route = set(route.dvers)
+        for extra_dver in extra_dvers:
+            if extra_dver in route.extra_dvers:
+                wanted_dvers_for_route.add(extra_dver)
+        for no_dver in no_dvers:
+            wanted_dvers_for_route.discard(no_dver)
+        if not wanted_dvers_for_route:
+            printf("All dvers for route %s have been disabled.")
+            _print_route_dvers(routename, route)
+            sys.exit(2)
+
+        route_dvers_pairs.append((route, wanted_dvers_for_route))
+
+    return route_dvers_pairs
+
+
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
-

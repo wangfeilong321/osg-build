@@ -133,7 +133,7 @@ class SRPMBuild(object):
         err_msg_prefix = ("Error making SRPM from %s\n"
                           "Command used was: %s\n" %
                           (spec_fn, " ".join(cmd)))
-        out, err = utils.sbacktick(cmd, nostrip=True, clocale=True, err2out=True)
+        out, err = utils.sbacktick(cmd, nostrip=True, err2out=True)
         if err:
             log.error("Rpmbuild failed. Output follows: " + out)
             raise OSGPrebuildError(err_msg_prefix +

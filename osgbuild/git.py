@@ -24,7 +24,7 @@ def is_git(package_dir):
                 raise Error("%s is not a valid package directory\n(%s)" % (package_dir, ose))
         command = ["git", "status", "--porcelain"]
         try:
-            err = utils.sbacktick(command, clocale=True, err2out=True)[1]
+            err = utils.sbacktick(command, err2out=True)[1]
         except OSError, ose:
             if ose.errno != errno.ENOENT:
                 raise
@@ -40,7 +40,7 @@ def get_branch(package_dir):
     """Return the current git branch for a given directory."""
     top_dir = os.path.split(os.path.abspath(package_dir))[0]
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"), "branch"]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git branch for directory %s.  Output:\n%s" % (err, package_dir, out))
     out = out.strip()
@@ -54,7 +54,7 @@ def get_known_remote(package_dir):
        is on osg-build's configured whitelist of remotes."""
     top_dir = os.path.split(os.path.abspath(package_dir))[0]
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"), "remote", "-v"]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git status for directory %s. Output:\n%s" % (err, package_dir, out))
     for line in out.splitlines():
@@ -73,7 +73,7 @@ def get_fetch_url(package_dir, remote):
        is on osg-build's configured whitelist of remotes."""
     top_dir = os.path.split(os.path.abspath(package_dir))[0]
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"), "remote", "-v"]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git status for directory %s. Output:\n%s" % (err, package_dir, out))
     for line in out.splitlines():
@@ -95,7 +95,7 @@ def get_current_branch_remote(package_dir):
     top_dir = os.path.split(os.path.abspath(package_dir))[0]
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"),
                "config", "branch.%s.remote" % branch]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git branch %s remote for directory '%s'. Output:\n%s" % \
                        (err, branch, package_dir, out))
@@ -107,7 +107,7 @@ def is_uncommitted(package_dir):
     """Return True if there are uncommitted changes or files in the git working dir."""
     top_dir = os.path.split(os.path.abspath(package_dir))[0]
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"), "status", "--porcelain"]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git status for directory %s. Output:\n%s" % (err, package_dir, out))
     if out:
@@ -123,7 +123,7 @@ def is_uncommitted(package_dir):
     origin_ref = "refs/remotes/%s/%s" % (remote, branch)
 
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"), "show-ref"]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git references for directory %s.  Output:\n%s", (err, package_dir, out))
     branch_hash = ''
@@ -159,7 +159,7 @@ def is_outdated(package_dir):
 
     top_dir = os.path.split(os.path.abspath(package_dir))[0]
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"), "show-ref"]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git references for directory %s.  Output:\n%s", (err, package_dir, out))
     for line in out.splitlines():
@@ -222,14 +222,14 @@ def verify_package_dir(package_dir):
     top_dir = os.path.split(os.path.abspath(package_dir))[0]
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"),
                "rev-parse", "--show-toplevel"]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git top-level directory of %s. Output:\n%s" % (err, package_dir, out))
     if top_dir != out.strip():
         raise GitError("Specified package directory (%s) is not a top-level directory in the git repo (%s)." % \
                        (package_dir, top_dir))
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"), "ls-files", "osg", "upstream"]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git subdirectories of %s. Output:\n%s" % (err, package_dir, out))
     for line in out.split("\n"):
@@ -242,7 +242,7 @@ def verify_git_svn_commit(package_dir):
     """Verify the last commit in the git repo actually came from git-svn."""
     top_dir = os.path.split(os.path.abspath(package_dir))[0]
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"), "log", "-n", "1"]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git log for directory %s. Output:\n%s" % (err, package_dir, out))
 
@@ -328,7 +328,7 @@ def koji(package_dir, koji_obj, buildopts):
     top_dir = os.path.split(os.path.abspath(package_dir))[0]
     command = ["git", "--work-tree", top_dir, "--git-dir", os.path.join(top_dir, ".git"),
                "log", "-1", "--pretty=format:%H"]
-    out, err = utils.sbacktick(command, clocale=True, err2out=True)
+    out, err = utils.sbacktick(command, err2out=True)
     if err:
         raise GitError("Exit code %d getting git hash for directory %s. Output:\n%s" % (err, package_dir, out))
     rev = out.strip()
