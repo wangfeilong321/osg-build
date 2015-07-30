@@ -1,3 +1,8 @@
+* Thu Jul 30 2015 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.6.0
+- Add promotion routes for goc repos (SOFTWARE-1969)
+- Read promotion route definitions from an ini file instead of guessing from available Koji tags
+- Fix promotion problems for repos with different supported dvers (SOFTWARE-1988)
+
 * Thu Jul 2 2015 Mátyás Selmeci <matyas@cs.wisc.edu> - 1.5.0
 - Build for el6 and el7 for OSG 3.3 by default (instead of el5 and el6) (SOFTWARE-1902)
 - Allow promotion to prerelease for osg-promote
