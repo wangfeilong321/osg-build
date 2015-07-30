@@ -8,10 +8,6 @@ import sys
 import logging
 import ConfigParser
 
-if sys.version_info < (2, 6):
-    sys.stderr.write("osg-promote requires Python 2.6 or greater")
-    sys.exit(1)
-
 from osgbuild import constants
 from osgbuild import error
 from osgbuild import kojiinter
@@ -19,7 +15,10 @@ from osgbuild import utils
 from osgbuild.utils import printf, print_table
 from optparse import OptionParser
 
-from collections import namedtuple
+try:
+    from collections import namedtuple
+except ImportError:
+    from osgbuild.namedtuple import namedtuple
 
 DEFAULT_ROUTE = 'testing'
 INIFILE = 'promoter.ini'
@@ -107,6 +106,12 @@ class Reject(object):
 # Utility functions
 #
 
+def any(iterable): # Don't warn about redefining this. pylint: disable=W0622
+    """True if any member of 'iterable' is true, False otherwise"""
+    for element in iterable:
+        if element:
+            return True
+    return False
 
 def split_nvr(build):
     """Split an NVR into a (Name, Version, Release) tuple"""
@@ -212,8 +217,8 @@ def load_routes(inifile):
             to_tag_hint = config.get(sec, 'to')
             repotag = config.get(sec, 'repotag')
             dvers = _parse_list_str(config.get(sec, 'dvers'))
-        except ConfigParser.NoOptionError as err:
-            raise error.Error("Malformed config file: {0!s}".format(err))
+        except ConfigParser.NoOptionError, err:
+            raise error.Error("Malformed config file: %s" % str(err))
         extra_dvers = []
         if config.has_option(sec, 'extra_dvers'):
             extra_dvers = _parse_list_str(config.get(sec, 'extra_dvers'))
@@ -224,8 +229,8 @@ def load_routes(inifile):
         for newname, oldname in config.items('aliases'):
             try:
                 routes[newname] = routes[oldname]
-            except KeyError as err:
-                raise error.Error("Alias {0} to {1} failed: {1} does not exist".format(newname,oldname))
+            except KeyError:
+                raise error.Error("Alias %s to %s failed: %s does not exist" % (newname, newname, oldname))
 
     return routes
 
@@ -562,6 +567,18 @@ def format_valid_routes(valid_routes):
     return formatted
 
 
+def _append_const(option, opt, value, parser, const):
+    """optparser callback to do the same as the 'append_const' action
+    on Python 2.4, which does not support append_const.
+
+    Use as follows in add_option:
+    action="callback", callback=_append_const, callback_args=(const,)
+    """
+    if not getattr(parser.values, option.dest, option.default):
+        setattr(parser.values, option.dest, [])
+    getattr(parser.values, option.dest).append(const)
+
+
 def parse_cmdline_args(all_dvers, valid_routes, argv):
     """Return a tuple of (options, positional args)"""
     helpstring = "%prog [-r|--route ROUTE]... [options] <packages or builds>"
@@ -585,9 +602,11 @@ def parse_cmdline_args(all_dvers, valid_routes, argv):
     for dver in all_dvers:
         parser.add_option("--%s-only" % dver, action="store_const", dest="only_dver", const=dver, default=None,
                           help="Promote only %s builds" % dver)
-        parser.add_option("--no-%s" % dver, "--no%s" % dver, dest="no_dvers", action="append_const", const=dver, default=[],
+        parser.add_option("--no-%s" % dver, "--no%s" % dver, dest="no_dvers", action="callback", callback=_append_const,
+                          callback_args=(dver,), default=[],
                           help="Do not promote %s builds, even if they are default for the route(s)" % dver)
-        parser.add_option("--%s" % dver, dest="extra_dvers", action="append_const", const=dver, default=[],
+        parser.add_option("--%s" % dver, dest="extra_dvers", action="callback", callback=_append_const,
+                          callback_args=(dver,), default=[],
                           help="Promote %s builds if the route(s) support them" % dver)
 
     if len(argv) < 2:
