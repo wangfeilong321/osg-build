@@ -116,7 +116,7 @@ REPO_HINTS_STATIC = {
     'perfsonar': {'target': 'perfsonar-el%s', 'tag': 'perfsonar-el%s'},
 }
 
-DEFAULT_DVERS = ['5', '6']
+DEFAULT_DVERS = ['6', '7']
 DEFAULT_DVERS_BY_REPO = {
     '3.2': ['5', '6'],
     'osg-3.2': ['5', '6'],
