@@ -305,7 +305,7 @@ class TestMock(XTestCase):
 
     def test_mock_koji_cfg(self):
         if self.check_for_mock_group():
-            checked_osg_build(["mock", self.pkg_dir, "--el5", "--mock-config-from-koji=osg-3.1-el5-build"])
+            checked_osg_build(["mock", self.pkg_dir, "--el6", "--mock-config-from-koji=osg-3.2-el6-build"])
 
 
 class TestKoji(XTestCase):
